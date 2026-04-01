@@ -9,7 +9,7 @@ st.set_page_config(page_title="3D Print Manager PRO", layout="wide")
 # Conexión con Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Leer ambas hojas (ajusta los nombres en worksheet si los tienes en mayúsculas en el Excel)
+# Leer ambas hojas
 try:
     df_pedidos = conn.read(worksheet="Pedidos", ttl=0) 
     df_presus = conn.read(worksheet="Presupuestos", ttl=0) 
@@ -39,8 +39,6 @@ def crear_pdf(cliente, pieza, coste_mat, coste_tiem, precio_fin):
     pdf.cell(200, 10, txt=f"- Material: {coste_mat:.2f} Euros", ln=True)
     pdf.cell(200, 10, txt=f"- Tiempo de máquina: {coste_tiem:.2f} Euros", ln=True)
     pdf.ln(10)
-    
-    # Letra en negrita corregida
     pdf.set_font("Arial", 'B', 14) 
     pdf.cell(200, 10, txt=f"TOTAL: {precio_fin:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
@@ -70,13 +68,11 @@ if menu == "Nueva Calculadora":
     st.metric("PRECIO FINAL", f"{p_final:.2f} €")
 
     if st.button("✅ Guardar Presupuesto y Crear Pedido"):
-        # 1. Guardar en Presupuestos
         nuevo_presu = pd.DataFrame([{
             "ID": len(df_presus) + 1, "Fecha": datetime.now().strftime("%d/%m/%Y"),
             "Cliente": cliente_n, "Pieza": pieza_n, "Coste_Material": c_mat,
             "Coste_Tiempo": c_tiem, "Precio_Final": p_final, "Notas": ""
         }])
-        # 2. Guardar en Pedidos automáticamente
         nuevo_ped = pd.DataFrame([{
             "ID": len(df_pedidos) + 1, "Fecha": datetime.now().strftime("%d/%m/%Y"),
             "Cliente": cliente_n, "Pieza": pieza_n, "Estado": "Pendiente",
@@ -92,7 +88,6 @@ elif menu == "Gestión de Presupuestos":
     st.header("📂 Historial de Presupuestos")
     busqueda = st.text_input("🔍 Buscar por cliente o pieza")
     
-    # Filtrado
     df_f = df_presus[df_presus.astype(str).apply(lambda x: x.str.contains(busqueda, case=False)).any(axis=1)] if not df_presus.empty else df_presus
 
     for i, row in df_f.iterrows():
@@ -102,8 +97,7 @@ elif menu == "Gestión de Presupuestos":
             col_a.caption(f"👤 Cliente: {row['Cliente']}")
             col_b.write(f"💰 Total: {row['Precio_Final']:.2f} €")
             
-            # Botones
-            pdf_b = crear_pdf(row['Cliente'], row['Pieza'], row['Coste_Material'], row['Coste_Tiempo'], row['Precio_Final'])
+            pdf_b = crear_pdf(str(row['Cliente']), str(row['Pieza']), float(row['Coste_Material']), float(row['Coste_Tiempo']), float(row['Precio_Final']))
             col_c.download_button("📩 PDF", pdf_b, f"Presu_{row['Cliente']}.pdf", key=f"dl_{i}")
             if col_c.button("🗑️ Borrar", key=f"del_{i}"):
                 df_presus = df_presus.drop(i)
@@ -124,6 +118,16 @@ elif menu == "Tablero de Producción":
                 with st.container(border=True):
                     st.write(f"**{r['Pieza']}**")
                     st.caption(f"👤 {r['Cliente']} | 💸 {r['Precio']}€")
+                    
+                    # --- NUEVO: Botón PDF en el tablero ---
+                    # Calculamos los costes base para el PDF usando tus tarifas (24€/kg y 1€/h)
+                    c_mat_tab = (24.0 / 1000) * float(r['Gramos']) if pd.notna(r['Gramos']) else 0.0
+                    c_tiem_tab = float(r['Horas']) * 1.0 if pd.notna(r['Horas']) else 0.0
+                    
+                    pdf_tablero = crear_pdf(str(r['Cliente']), str(r['Pieza']), c_mat_tab, c_tiem_tab, float(r['Precio']))
+                    st.download_button("📄 PDF", pdf_tablero, f"Pedido_{r['Cliente']}.pdf", key=f"dl_tab_{r['ID']}")
+                    # --------------------------------------
+
                     nuevo_est = st.selectbox("Estado", estados, index=estados.index(est), key=f"tab_{r['ID']}", label_visibility="collapsed")
                     if nuevo_est != est:
                         df_pedidos.loc[df_pedidos["ID"] == r["ID"], "Estado"] = nuevo_est
