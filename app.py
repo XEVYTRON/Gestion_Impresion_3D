@@ -6,22 +6,31 @@ from fpdf import FPDF
 
 # 1. CONFIGURACIÓN DE PÁGINA E INTERFAZ LIMPIA
 st.set_page_config(
-    page_title="Gestión 3D", 
+    page_title="Xevytron 3D", 
     layout="wide", 
-    initial_sidebar_state="collapsed" # El menú lateral empieza cerrado en el móvil
+    initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS para eliminar TODO lo que sobra (Barra superior, Made with Streamlit, etc.)
-estilos_limpios = """
+# Estilos CSS para botones de navegación y ocultar menús de sistema
+estilos_app = """
     <style>
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
         .stDeployButton {display:none;}
         [data-testid="stStatusWidget"] {display:none;}
+        
+        /* Estilo para los botones de navegación superiores */
+        .stButton > button {
+            width: 100%;
+            border-radius: 10px;
+            height: 3em;
+            background-color: #f0f2f6;
+            border: 1px solid #d1d5db;
+        }
     </style>
 """
-st.markdown(estilos_limpios, unsafe_allow_html=True)
+st.markdown(estilos_app, unsafe_allow_html=True)
 
 # 2. CONEXIÓN A DATOS
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -55,11 +64,36 @@ def crear_pdf(cliente, pieza, coste_mat, coste_tiem, precio_fin):
     pdf.cell(200, 10, txt=f"TOTAL: {precio_fin:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
-# 4. NAVEGACIÓN
+# 4. BARRA DE NAVEGACIÓN SUPERIOR (BOTONES EN FILA)
 st.title("🛠️ Xevytron 3D")
-menu = st.sidebar.selectbox("Menú", ["Tablero de Producción", "Historial de Presupuestos", "Calculadora"])
 
-if menu == "Calculadora":
+# Creamos 3 columnas para los botones de menú
+col_nav1, col_nav2, col_nav3 = st.columns(3)
+
+# Usamos el estado de la sesión para saber qué pestaña está activa
+if 'menu_activo' not in st.session_state:
+    st.session_state.menu_activo = "Producción"
+
+with col_nav1:
+    if st.button("📊 Tablero"):
+        st.session_state.menu_activo = "Producción"
+        st.rerun()
+
+with col_nav2:
+    if st.button("🧮 Calcular"):
+        st.session_state.menu_activo = "Calculadora"
+        st.rerun()
+
+with col_nav3:
+    if st.button("📂 Historial"):
+        st.session_state.menu_activo = "Historial"
+        st.rerun()
+
+st.divider()
+
+# 5. CONTENIDO SEGÚN EL BOTÓN PULSADO
+
+if st.session_state.menu_activo == "Calculadora":
     st.header("🧮 Nueva Calculadora")
     with st.expander("Datos del Cliente", expanded=True):
         c1, c2 = st.columns(2)
@@ -96,8 +130,8 @@ if menu == "Calculadora":
         st.success("Guardado correctamente.")
         st.cache_data.clear()
 
-elif menu == "Historial de Presupuestos":
-    st.header("📂 Presupuestos")
+elif st.session_state.menu_activo == "Historial":
+    st.header("📂 Historial de Presupuestos")
     busqueda = st.text_input("🔍 Buscar")
     df_f = df_presus[df_presus.astype(str).apply(lambda x: x.str.contains(busqueda, case=False)).any(axis=1)] if not df_presus.empty else df_presus
 
@@ -114,28 +148,13 @@ elif menu == "Historial de Presupuestos":
                 st.cache_data.clear()
                 st.rerun()
 
-elif menu == "Tablero de Producción":
+elif st.session_state.menu_activo == "Producción":
     st.header("📊 Producción")
     estados = ["Pendiente", "En Preparación", "En Ejecución", "Finalizado"]
     
-    # En móvil, las columnas se verán una debajo de otra
     for est in estados:
-        st.subheader(f"--- {est} ---")
+        st.subheader(f"📍 {est}")
         items = df_pedidos[df_pedidos["Estado"] == est]
         for _, r in items.iterrows():
             with st.container(border=True):
                 st.write(f"**{r['Pieza']}** ({r['Cliente']})")
-                
-                # Generar PDF rápido para el tablero
-                c_mat_tab = (24.0 / 1000) * float(r['Gramos']) if pd.notna(r['Gramos']) else 0.0
-                c_tiem_tab = float(r['Horas']) * 1.0 if pd.notna(r['Horas']) else 0.0
-                pdf_tab = crear_pdf(str(r['Cliente']), str(r['Pieza']), c_mat_tab, c_tiem_tab, float(r['Precio']))
-                
-                st.download_button("📄 Ver PDF", pdf_tab, f"Pedido_{r['Cliente']}.pdf", key=f"tab_{r['ID']}")
-                
-                nuevo_est = st.selectbox("Cambiar Estado", estados, index=estados.index(est), key=f"sel_{r['ID']}")
-                if nuevo_est != est:
-                    df_pedidos.loc[df_pedidos["ID"] == r["ID"], "Estado"] = nuevo_est
-                    conn.update(worksheet="Pedidos", data=df_pedidos)
-                    st.cache_data.clear()
-                    st.rerun()
