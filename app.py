@@ -11,7 +11,8 @@ df = conn.read(ttl=0)
 
 st.title("🛠️ Control de Pedidos 3D")
 
-menu = st.sidebar.selectbox("Menú", ["Tablero de Pedidos", "Nuevo Pedido", "Calculadora"])
+# Hemos añadido "Editar Pedido" al menú
+menu = st.sidebar.selectbox("Menú", ["Tablero de Pedidos", "Nuevo Pedido", "Editar Pedido", "Calculadora"])
 
 if menu == "Calculadora":
     st.header("🧮 Calculadora de Presupuesto")
@@ -56,31 +57,80 @@ elif menu == "Nuevo Pedido":
             st.success("¡Pedido guardado en la nube!")
             st.cache_data.clear()
 
+# --- NUEVA SECCIÓN DE EDICIÓN ---
+elif menu == "Editar Pedido":
+    st.header("✏️ Modificar o Borrar Pedido")
+    
+    if df.empty:
+        st.warning("No hay pedidos registrados para editar.")
+    else:
+        # Crear una lista desplegable para buscar el pedido fácilmente
+        opciones = df["ID"].astype(str) + " - " + df["Pieza"] + " (" + df["Cliente"] + ")"
+        seleccion = st.selectbox("Busca el pedido que quieres modificar:", opciones)
+        
+        # Extraer el ID exacto de la selección
+        id_seleccionado = int(seleccion.split(" - ")[0])
+        pedido = df[df["ID"] == id_seleccionado].iloc[0]
+        
+        with st.form("editar_form"):
+            st.write(f"**Editando el pedido ID: {id_seleccionado}**")
+            n_cliente = st.text_input("Cliente", value=pedido["Cliente"])
+            n_pieza = st.text_input("Pieza", value=pedido["Pieza"])
+            n_precio = st.number_input("Precio (€)", value=float(pedido["Precio"]))
+            n_gramos = st.number_input("Gramos", value=float(pedido["Gramos"]))
+            n_horas = st.number_input("Horas", value=float(pedido["Horas"]))
+            
+            # Controlar si las notas están vacías para que no de error
+            notas_actuales = str(pedido["Notas"]) if pd.notna(pedido["Notas"]) else ""
+            n_notas = st.text_area("Notas", value=notas_actuales)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                guardar = st.form_submit_button("💾 Guardar Cambios")
+            with col2:
+                borrar = st.form_submit_button("🗑️ Borrar Pedido")
+                
+            if guardar:
+                idx = df.index[df['ID'] == id_seleccionado][0]
+                df.loc[idx, 'Cliente'] = n_cliente
+                df.loc[idx, 'Pieza'] = n_pieza
+                df.loc[idx, 'Precio'] = n_precio
+                df.loc[idx, 'Gramos'] = n_gramos
+                df.loc[idx, 'Horas'] = n_horas
+                df.loc[idx, 'Notas'] = n_notas
+                conn.update(data=df)
+                st.success("¡Cambios guardados correctamente!")
+                st.cache_data.clear()
+                st.rerun()
+                
+            if borrar:
+                # Nos quedamos con todos los pedidos menos con el que queremos borrar
+                df = df[df["ID"] != id_seleccionado]
+                conn.update(data=df)
+                st.warning("¡Pedido eliminado!")
+                st.cache_data.clear()
+                st.rerun()
+
 elif menu == "Tablero de Pedidos":
     st.header("📊 Tablero de Producción")
     
     if df.empty:
         st.warning("Aún no hay pedidos registrados. Ve a 'Nuevo Pedido' para empezar.")
     else:
-        # Definir los estados y crear 4 columnas
         estados = ["Pendiente", "En Preparación", "En Ejecución", "Finalizado"]
         columnas = st.columns(4)
         
-        # Llenar cada columna con sus tarjetas correspondientes
         for idx, estado in enumerate(estados):
             with columnas[idx]:
                 st.subheader(estado)
                 
-                # Filtrar pedidos por este estado
                 pedidos_estado = df[df["Estado"] == estado]
                 
                 for _, row in pedidos_estado.iterrows():
-                    # Crear una "tarjeta" para cada pedido
                     with st.container(border=True):
                         st.markdown(f"**{row['Pieza']}**")
                         st.caption(f"👤 {row['Cliente']} | 💰 {row['Precio']}€")
                         
-                        # Selector para mover la tarjeta a otro estado
                         nuevo_estado = st.selectbox(
                             "Mover a:", 
                             estados, 
@@ -89,9 +139,8 @@ elif menu == "Tablero de Pedidos":
                             label_visibility="collapsed"
                         )
                         
-                        # Si se selecciona un estado diferente, actualizar la base de datos
                         if nuevo_estado != estado:
                             df.loc[df["ID"] == row["ID"], "Estado"] = nuevo_estado
                             conn.update(data=df)
                             st.cache_data.clear()
-                            st.rerun() # Recarga la página al instante para ver el cambio
+                            st.rerun()
