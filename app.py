@@ -2,154 +2,129 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
+from fpdf import FPDF
 
-st.set_page_config(page_title="3D Print Manager", layout="wide")
+st.set_page_config(page_title="3D Print Manager PRO", layout="wide")
 
 # Conexión con Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
-df = conn.read(ttl=0)
 
-st.title("🛠️ Control de Pedidos 3D")
+# Leer ambas hojas
+try:
+    df_pedidos = conn.read(worksheet="Pedidos", ttl=0)
+    df_presus = conn.read(worksheet="Presupuestos", ttl=0)
+except:
+    st.error("Asegúrate de tener las pestañas 'Pedidos' y 'Presupuestos' en tu Google Sheets.")
+    st.stop()
 
-menu = st.sidebar.selectbox("Menú", ["Tablero de Pedidos", "Nuevo Pedido", "Editar Pedido", "Calculadora"])
+st.title("🚀 Gestión 3D: Pedidos y Presupuestos")
 
-if menu == "Calculadora":
-    st.header("🧮 Calculadora de Presupuesto")
+menu = st.sidebar.selectbox("Menú", ["Tablero de Producción", "Gestión de Presupuestos", "Nueva Calculadora"])
+
+# --- FUNCIÓN PDF ---
+def crear_pdf(cliente, pieza, coste_mat, coste_tiem, precio_fin):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt="PRESUPUESTO DE IMPRESIÓN 3D", ln=True, align='C')
+    pdf.ln(10)
+    pdf.set_font("Arial", '', 12)
+    pdf.cell(200, 10, txt=f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", ln=True)
+    pdf.cell(200, 10, txt=f"Cliente: {cliente}", ln=True)
+    pdf.cell(200, 10, txt=f"Pieza: {pieza}", ln=True)
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 10, txt="Desglose:", ln=True)
+    pdf.set_font("Arial", '', 12)
+    pdf.cell(200, 10, txt=f"- Material: {coste_mat:.2f} Euros", ln=True)
+    pdf.cell(200, 10, txt=f"- Tiempo de máquina: {coste_tiem:.2f} Euros", ln=True)
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B(A', 14)
+    pdf.cell(200, 10, txt=f"TOTAL: {precio_fin:.2f} Euros", ln=True)
+    return pdf.output(dest="S").encode("latin-1")
+
+# --- LÓGICA DE MENÚS ---
+
+if menu == "Nueva Calculadora":
+    st.header("🧮 Calculadora y Nuevo Presupuesto")
+    with st.expander("Datos del Cliente", expanded=True):
+        c1, c2 = st.columns(2)
+        cliente_n = c1.text_input("Nombre del Cliente")
+        pieza_n = c2.text_input("Nombre de la Pieza")
     
     col1, col2 = st.columns(2)
     with col1:
         precio_kilo = st.number_input("Precio Filamento (€/kg)", value=24.0)
-        gramos = st.number_input("Gramos necesarios", value=0.0)
+        gramos = st.number_input("Gramos (Slicer)", value=0.0)
     with col2:
-        horas = st.number_input("Horas de impresión", value=0.0)
-        precio_hora = st.number_input("Precio por hora (€/h)", value=1.0)
-        margen = st.slider("Margen de beneficio %", 0, 300, 100)
+        horas = st.number_input("Horas (Slicer)", value=0.0)
+        precio_hora = st.number_input("Precio/Hora (€)", value=1.0)
+        margen = st.slider("Beneficio %", 0, 300, 100)
 
-    # Cálculos con tu fórmula
-    costo_material = (precio_kilo / 1000) * gramos
-    costo_tiempo = horas * precio_hora
-    total_base = costo_material + costo_tiempo
-    precio_final = total_base * (1 + margen / 100)
+    c_mat = (precio_kilo / 1000) * gramos
+    c_tiem = horas * precio_hora
+    p_final = (c_mat + c_tiem) * (1 + margen / 100)
 
-    st.divider()
-    st.write("### Desglose de costes:")
-    st.write(f"- 🧵 **Material:** {costo_material:.2f} €")
-    st.write(f"- ⏱️ **Tiempo de máquina:** {costo_tiempo:.2f} €")
-    st.write(f"- ⚙️ **Coste Base Total:** {total_base:.2f} €")
+    st.metric("PRECIO FINAL", f"{p_final:.2f} €")
+
+    if st.button("✅ Guardar Presupuesto y Crear Pedido"):
+        # 1. Guardar en Presupuestos
+        nuevo_presu = pd.DataFrame([{
+            "ID": len(df_presus) + 1, "Fecha": datetime.now().strftime("%d/%m/%Y"),
+            "Cliente": cliente_n, "Pieza": pieza_n, "Coste_Material": c_mat,
+            "Coste_Tiempo": c_tiem, "Precio_Final": p_final, "Notas": ""
+        }])
+        # 2. Guardar en Pedidos automáticamente
+        nuevo_ped = pd.DataFrame([{
+            "ID": len(df_pedidos) + 1, "Fecha": datetime.now().strftime("%d/%m/%Y"),
+            "Cliente": cliente_n, "Pieza": pieza_n, "Estado": "Pendiente",
+            "Precio": p_final, "Gramos": gramos, "Horas": horas, "Notas": "Viene de presupuesto"
+        }])
+        
+        conn.update(worksheet="Presupuestos", data=pd.concat([df_presus, nuevo_presu], ignore_index=True))
+        conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, nuevo_ped], ignore_index=True))
+        st.success("Presupuesto guardado y pedido enviado al tablero.")
+        st.cache_data.clear()
+
+elif menu == "Gestión de Presupuestos":
+    st.header("📂 Historial de Presupuestos")
+    busqueda = st.text_input("🔍 Buscar por cliente o pieza")
     
-    st.metric("PRECIO FINAL PARA EL CLIENTE", f"{precio_final:.2f} €")
+    # Filtrado
+    df_f = df_presus[df_presus.astype(str).apply(lambda x: x.str.contains(busqueda, case=False)).any(axis=1)] if not df_presus.empty else df_presus
 
-elif menu == "Nuevo Pedido":
-    st.header("📝 Registrar Nuevo Trabajo")
-    with st.form("nuevo_form"):
-        cliente = st.text_input("Nombre del Cliente")
-        pieza = st.text_input("Nombre de la Pieza")
-        gramos_p = st.number_input("Gramos", value=0.0)
-        horas_p = st.number_input("Horas", value=0.0)
-        precio_p = st.number_input("Precio Pactado (€)", value=0.0)
-        notas = st.text_area("Notas")
-        
-        if st.form_submit_button("Guardar Pedido"):
-            nuevo_dato = pd.DataFrame([{
-                "ID": len(df) + 1 if not df.empty else 1,
-                "Fecha": datetime.now().strftime("%d/%m/%Y"),
-                "Cliente": cliente,
-                "Pieza": pieza,
-                "Estado": "Pendiente",
-                "Precio": precio_p,
-                "Gramos": gramos_p,
-                "Horas": horas_p,
-                "Notas": notas
-            }])
-            updated_df = pd.concat([df, nuevo_dato], ignore_index=True)
-            conn.update(data=updated_df)
-            st.success("¡Pedido guardado en la nube!")
-            st.cache_data.clear()
-
-elif menu == "Editar Pedido":
-    st.header("✏️ Modificar o Borrar Pedido")
-    
-    if df.empty:
-        st.warning("No hay pedidos registrados para editar.")
-    else:
-        # Limpieza de seguridad para los IDs de Google Sheets
-        df["ID"] = pd.to_numeric(df["ID"], errors='coerce').fillna(0).astype(int)
-        df["Cliente"] = df["Cliente"].fillna("Desconocido")
-        df["Pieza"] = df["Pieza"].fillna("Sin nombre")
-
-        opciones = df["ID"].astype(str) + " - " + df["Pieza"].astype(str) + " (" + df["Cliente"].astype(str) + ")"
-        seleccion = st.selectbox("Busca el pedido que quieres modificar:", opciones)
-        
-        id_seleccionado = int(float(seleccion.split(" - ")[0]))
-        pedido = df[df["ID"] == id_seleccionado].iloc[0]
-        
-        with st.form("editar_form"):
-            st.write(f"**Editando el pedido ID: {id_seleccionado}**")
-            n_cliente = st.text_input("Cliente", value=str(pedido["Cliente"]))
-            n_pieza = st.text_input("Pieza", value=str(pedido["Pieza"]))
-            n_precio = st.number_input("Precio (€)", value=float(pedido["Precio"]) if pd.notna(pedido["Precio"]) else 0.0)
-            n_gramos = st.number_input("Gramos", value=float(pedido["Gramos"]) if pd.notna(pedido["Gramos"]) else 0.0)
-            n_horas = st.number_input("Horas", value=float(pedido["Horas"]) if pd.notna(pedido["Horas"]) else 0.0)
+    for i, row in df_f.iterrows():
+        with st.container(border=True):
+            col_a, col_b, col_c = st.columns([2, 2, 1])
+            col_a.write(f"**{row['Pieza']}** ({row['Fecha']})")
+            col_a.caption(f"👤 Cliente: {row['Cliente']}")
+            col_b.write(f"💰 Total: {row['Precio_Final']:.2f} €")
             
-            notas_actuales = str(pedido["Notas"]) if pd.notna(pedido["Notas"]) else ""
-            n_notas = st.text_area("Notas", value=notas_actuales)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                guardar = st.form_submit_button("💾 Guardar Cambios")
-            with col2:
-                borrar = st.form_submit_button("🗑️ Borrar Pedido")
-                
-            if guardar:
-                idx = df.index[df['ID'] == id_seleccionado][0]
-                df.loc[idx, 'Cliente'] = n_cliente
-                df.loc[idx, 'Pieza'] = n_pieza
-                df.loc[idx, 'Precio'] = n_precio
-                df.loc[idx, 'Gramos'] = n_gramos
-                df.loc[idx, 'Horas'] = n_horas
-                df.loc[idx, 'Notas'] = n_notas
-                conn.update(data=df)
-                st.success("¡Cambios guardados correctamente!")
-                st.cache_data.clear()
-                st.rerun()
-                
-            if borrar:
-                df = df[df["ID"] != id_seleccionado]
-                conn.update(data=df)
-                st.warning("¡Pedido eliminado!")
+            # Botones
+            pdf_b = crear_pdf(row['Cliente'], row['Pieza'], row['Coste_Material'], row['Coste_Tiempo'], row['Precio_Final'])
+            col_c.download_button("📩 PDF", pdf_b, f"Presu_{row['Cliente']}.pdf", key=f"dl_{i}")
+            if col_c.button("🗑️ Borrar", key=f"del_{i}"):
+                df_presus = df_presus.drop(i)
+                conn.update(worksheet="Presupuestos", data=df_presus)
                 st.cache_data.clear()
                 st.rerun()
 
-elif menu == "Tablero de Pedidos":
-    st.header("📊 Tablero de Producción")
+elif menu == "Tablero de Producción":
+    st.header("📊 Tablero de Trabajo")
+    estados = ["Pendiente", "En Preparación", "En Ejecución", "Finalizado"]
+    columnas = st.columns(4)
     
-    if df.empty:
-        st.warning("Aún no hay pedidos registrados. Ve a 'Nuevo Pedido' para empezar.")
-    else:
-        estados = ["Pendiente", "En Preparación", "En Ejecución", "Finalizado"]
-        columnas = st.columns(4)
-        
-        for idx, estado in enumerate(estados):
-            with columnas[idx]:
-                st.subheader(estado)
-                
-                pedidos_estado = df[df["Estado"] == estado]
-                
-                for _, row in pedidos_estado.iterrows():
-                    with st.container(border=True):
-                        st.markdown(f"**{row['Pieza']}**")
-                        st.caption(f"👤 {row['Cliente']} | 💰 {row['Precio']}€")
-                        
-                        nuevo_estado = st.selectbox(
-                            "Mover a:", 
-                            estados, 
-                            index=estados.index(estado), 
-                            key=f"sel_{row['ID']}",
-                            label_visibility="collapsed"
-                        )
-                        
-                        if nuevo_estado != estado:
-                            df.loc[df["ID"] == row["ID"], "Estado"] = nuevo_estado
-                            conn.update(data=df)
-                            st.cache_data.clear()
-                            st.rerun()
+    for idx, est in enumerate(estados):
+        with columnas[idx]:
+            st.subheader(est)
+            items = df_pedidos[df_pedidos["Estado"] == est]
+            for _, r in items.iterrows():
+                with st.container(border=True):
+                    st.write(f"**{r['Pieza']}**")
+                    st.caption(f"👤 {r['Cliente']} | 💸 {r['Precio']}€")
+                    nuevo_est = st.selectbox("Estado", estados, index=estados.index(est), key=f"tab_{r['ID']}", label_visibility="collapsed")
+                    if nuevo_est != est:
+                        df_pedidos.loc[df_pedidos["ID"] == r["ID"], "Estado"] = nuevo_est
+                        conn.update(worksheet="Pedidos", data=df_pedidos)
+                        st.cache_data.clear()
+                        st.rerun()
