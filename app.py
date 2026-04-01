@@ -61,4 +61,95 @@ elif menu == "Nuevo Pedido":
                 "Horas": horas_p,
                 "Notas": notas
             }])
-            updated_df = pd.
+            updated_df = pd.concat([df, nuevo_dato], ignore_index=True)
+            conn.update(data=updated_df)
+            st.success("¡Pedido guardado en la nube!")
+            st.cache_data.clear()
+
+elif menu == "Editar Pedido":
+    st.header("✏️ Modificar o Borrar Pedido")
+    
+    if df.empty:
+        st.warning("No hay pedidos registrados para editar.")
+    else:
+        # Limpieza de seguridad para los IDs de Google Sheets
+        df["ID"] = pd.to_numeric(df["ID"], errors='coerce').fillna(0).astype(int)
+        df["Cliente"] = df["Cliente"].fillna("Desconocido")
+        df["Pieza"] = df["Pieza"].fillna("Sin nombre")
+
+        opciones = df["ID"].astype(str) + " - " + df["Pieza"].astype(str) + " (" + df["Cliente"].astype(str) + ")"
+        seleccion = st.selectbox("Busca el pedido que quieres modificar:", opciones)
+        
+        id_seleccionado = int(float(seleccion.split(" - ")[0]))
+        pedido = df[df["ID"] == id_seleccionado].iloc[0]
+        
+        with st.form("editar_form"):
+            st.write(f"**Editando el pedido ID: {id_seleccionado}**")
+            n_cliente = st.text_input("Cliente", value=str(pedido["Cliente"]))
+            n_pieza = st.text_input("Pieza", value=str(pedido["Pieza"]))
+            n_precio = st.number_input("Precio (€)", value=float(pedido["Precio"]) if pd.notna(pedido["Precio"]) else 0.0)
+            n_gramos = st.number_input("Gramos", value=float(pedido["Gramos"]) if pd.notna(pedido["Gramos"]) else 0.0)
+            n_horas = st.number_input("Horas", value=float(pedido["Horas"]) if pd.notna(pedido["Horas"]) else 0.0)
+            
+            notas_actuales = str(pedido["Notas"]) if pd.notna(pedido["Notas"]) else ""
+            n_notas = st.text_area("Notas", value=notas_actuales)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                guardar = st.form_submit_button("💾 Guardar Cambios")
+            with col2:
+                borrar = st.form_submit_button("🗑️ Borrar Pedido")
+                
+            if guardar:
+                idx = df.index[df['ID'] == id_seleccionado][0]
+                df.loc[idx, 'Cliente'] = n_cliente
+                df.loc[idx, 'Pieza'] = n_pieza
+                df.loc[idx, 'Precio'] = n_precio
+                df.loc[idx, 'Gramos'] = n_gramos
+                df.loc[idx, 'Horas'] = n_horas
+                df.loc[idx, 'Notas'] = n_notas
+                conn.update(data=df)
+                st.success("¡Cambios guardados correctamente!")
+                st.cache_data.clear()
+                st.rerun()
+                
+            if borrar:
+                df = df[df["ID"] != id_seleccionado]
+                conn.update(data=df)
+                st.warning("¡Pedido eliminado!")
+                st.cache_data.clear()
+                st.rerun()
+
+elif menu == "Tablero de Pedidos":
+    st.header("📊 Tablero de Producción")
+    
+    if df.empty:
+        st.warning("Aún no hay pedidos registrados. Ve a 'Nuevo Pedido' para empezar.")
+    else:
+        estados = ["Pendiente", "En Preparación", "En Ejecución", "Finalizado"]
+        columnas = st.columns(4)
+        
+        for idx, estado in enumerate(estados):
+            with columnas[idx]:
+                st.subheader(estado)
+                
+                pedidos_estado = df[df["Estado"] == estado]
+                
+                for _, row in pedidos_estado.iterrows():
+                    with st.container(border=True):
+                        st.markdown(f"**{row['Pieza']}**")
+                        st.caption(f"👤 {row['Cliente']} | 💰 {row['Precio']}€")
+                        
+                        nuevo_estado = st.selectbox(
+                            "Mover a:", 
+                            estados, 
+                            index=estados.index(estado), 
+                            key=f"sel_{row['ID']}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        if nuevo_estado != estado:
+                            df.loc[df["ID"] == row["ID"], "Estado"] = nuevo_estado
+                            conn.update(data=df)
+                            st.cache_data.clear()
+                            st.rerun()
