@@ -40,7 +40,7 @@ def crear_pdf(cliente, pieza, coste_mat, coste_tiem, precio_fin):
     pdf.cell(200, 10, txt=f"- Tiempo de máquina: {coste_tiem:.2f} Euros", ln=True)
     pdf.ln(10)
     
-    # AQUÍ ESTABA EL ERROR. ¡Ya está corregido a 'B'!
+    # Letra en negrita corregida
     pdf.set_font("Arial", 'B', 14) 
     pdf.cell(200, 10, txt=f"TOTAL: {precio_fin:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
@@ -116,4 +116,17 @@ elif menu == "Tablero de Producción":
     estados = ["Pendiente", "En Preparación", "En Ejecución", "Finalizado"]
     columnas = st.columns(4)
     
-    for
+    for idx, est in enumerate(estados):
+        with columnas[idx]:
+            st.subheader(est)
+            items = df_pedidos[df_pedidos["Estado"] == est]
+            for _, r in items.iterrows():
+                with st.container(border=True):
+                    st.write(f"**{r['Pieza']}**")
+                    st.caption(f"👤 {r['Cliente']} | 💸 {r['Precio']}€")
+                    nuevo_est = st.selectbox("Estado", estados, index=estados.index(est), key=f"tab_{r['ID']}", label_visibility="collapsed")
+                    if nuevo_est != est:
+                        df_pedidos.loc[df_pedidos["ID"] == r["ID"], "Estado"] = nuevo_est
+                        conn.update(worksheet="Pedidos", data=df_pedidos)
+                        st.cache_data.clear()
+                        st.rerun()
