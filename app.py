@@ -9,12 +9,12 @@ st.set_page_config(page_title="3D Print Manager PRO", layout="wide")
 # Conexión con Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Leer ambas hojas
+# Leer ambas hojas (ajusta los nombres en worksheet si los tienes en mayúsculas en el Excel)
 try:
-    df_pedidos = conn.read(worksheet="Pedidos", ttl=0)
-    df_presus = conn.read(worksheet="Presupuestos", ttl=0)
-except:
-    st.error("Asegúrate de tener las pestañas 'Pedidos' y 'Presupuestos' en tu Google Sheets.")
+    df_pedidos = conn.read(worksheet="Pedidos", ttl=0) 
+    df_presus = conn.read(worksheet="Presupuestos", ttl=0) 
+except Exception as e:
+    st.error(f"Error técnico al leer las hojas: {e}")
     st.stop()
 
 st.title("🚀 Gestión 3D: Pedidos y Presupuestos")
@@ -33,13 +33,15 @@ def crear_pdf(cliente, pieza, coste_mat, coste_tiem, precio_fin):
     pdf.cell(200, 10, txt=f"Cliente: {cliente}", ln=True)
     pdf.cell(200, 10, txt=f"Pieza: {pieza}", ln=True)
     pdf.ln(10)
-    pdf.set_font("Arial", 'B', 14)
+    pdf.set_font("Arial", 'B', 12)
     pdf.cell(200, 10, txt="Desglose:", ln=True)
     pdf.set_font("Arial", '', 12)
     pdf.cell(200, 10, txt=f"- Material: {coste_mat:.2f} Euros", ln=True)
     pdf.cell(200, 10, txt=f"- Tiempo de máquina: {coste_tiem:.2f} Euros", ln=True)
     pdf.ln(10)
-    pdf.set_font("Arial", 'B(A', 14)
+    
+    # AQUÍ ESTABA EL ERROR. ¡Ya está corregido a 'B'!
+    pdf.set_font("Arial", 'B', 14) 
     pdf.cell(200, 10, txt=f"TOTAL: {precio_fin:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
@@ -114,17 +116,4 @@ elif menu == "Tablero de Producción":
     estados = ["Pendiente", "En Preparación", "En Ejecución", "Finalizado"]
     columnas = st.columns(4)
     
-    for idx, est in enumerate(estados):
-        with columnas[idx]:
-            st.subheader(est)
-            items = df_pedidos[df_pedidos["Estado"] == est]
-            for _, r in items.iterrows():
-                with st.container(border=True):
-                    st.write(f"**{r['Pieza']}**")
-                    st.caption(f"👤 {r['Cliente']} | 💸 {r['Precio']}€")
-                    nuevo_est = st.selectbox("Estado", estados, index=estados.index(est), key=f"tab_{r['ID']}", label_visibility="collapsed")
-                    if nuevo_est != est:
-                        df_pedidos.loc[df_pedidos["ID"] == r["ID"], "Estado"] = nuevo_est
-                        conn.update(worksheet="Pedidos", data=df_pedidos)
-                        st.cache_data.clear()
-                        st.rerun()
+    for
