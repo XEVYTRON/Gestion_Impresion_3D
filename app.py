@@ -64,21 +64,28 @@ elif menu == "Editar Pedido":
     if df.empty:
         st.warning("No hay pedidos registrados para editar.")
     else:
+        # 1. Limpieza de seguridad: Forzamos a que el ID sea un número entero (1, 2, 3...) sin decimales
+        df["ID"] = pd.to_numeric(df["ID"], errors='coerce').fillna(0).astype(int)
+        
+        # Rellenar posibles huecos vacíos para que no falle al crear el texto
+        df["Cliente"] = df["Cliente"].fillna("Desconocido")
+        df["Pieza"] = df["Pieza"].fillna("Sin nombre")
+
         # Crear una lista desplegable para buscar el pedido fácilmente
-        opciones = df["ID"].astype(str) + " - " + df["Pieza"] + " (" + df["Cliente"] + ")"
+        opciones = df["ID"].astype(str) + " - " + df["Pieza"].astype(str) + " (" + df["Cliente"].astype(str) + ")"
         seleccion = st.selectbox("Busca el pedido que quieres modificar:", opciones)
         
-        # Extraer el ID exacto de la selección
-        id_seleccionado = int(seleccion.split(" - ")[0])
+        # Extraer el ID exacto de la selección (con doble conversión por seguridad)
+        id_seleccionado = int(float(seleccion.split(" - ")[0]))
         pedido = df[df["ID"] == id_seleccionado].iloc[0]
         
         with st.form("editar_form"):
             st.write(f"**Editando el pedido ID: {id_seleccionado}**")
-            n_cliente = st.text_input("Cliente", value=pedido["Cliente"])
-            n_pieza = st.text_input("Pieza", value=pedido["Pieza"])
-            n_precio = st.number_input("Precio (€)", value=float(pedido["Precio"]))
-            n_gramos = st.number_input("Gramos", value=float(pedido["Gramos"]))
-            n_horas = st.number_input("Horas", value=float(pedido["Horas"]))
+            n_cliente = st.text_input("Cliente", value=str(pedido["Cliente"]))
+            n_pieza = st.text_input("Pieza", value=str(pedido["Pieza"]))
+            n_precio = st.number_input("Precio (€)", value=float(pedido["Precio"]) if pd.notna(pedido["Precio"]) else 0.0)
+            n_gramos = st.number_input("Gramos", value=float(pedido["Gramos"]) if pd.notna(pedido["Gramos"]) else 0.0)
+            n_horas = st.number_input("Horas", value=float(pedido["Horas"]) if pd.notna(pedido["Horas"]) else 0.0)
             
             # Controlar si las notas están vacías para que no de error
             notas_actuales = str(pedido["Notas"]) if pd.notna(pedido["Notas"]) else ""
@@ -110,7 +117,7 @@ elif menu == "Editar Pedido":
                 st.warning("¡Pedido eliminado!")
                 st.cache_data.clear()
                 st.rerun()
-
+                
 elif menu == "Tablero de Pedidos":
     st.header("📊 Tablero de Producción")
     
