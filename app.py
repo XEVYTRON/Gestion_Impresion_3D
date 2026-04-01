@@ -7,123 +7,125 @@ from fpdf import FPDF
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Xevytron 3D", layout="wide", initial_sidebar_state="collapsed")
 
-# Estilos CSS corregidos para asegurar visibilidad
+# --- DISEÑO DE INTERFAZ FIJA (CSS AVANZADO) ---
 st.markdown("""
     <style>
+        /* Ocultar elementos de sistema */
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
         .stDeployButton {display:none;}
         [data-testid="stStatusWidget"] {display:none;}
-        .main-content {margin-bottom: 120px;}
-        .nav-bar {
+
+        /* Contenedor principal con margen inferior para que no tape el último pedido */
+        .main-content {
+            margin-bottom: 120px;
+        }
+
+        /* BARRA INFERIOR FIJA */
+        div[data-testid="stVerticalBlock"] > div:last-child {
             position: fixed;
             bottom: 0;
             left: 0;
             width: 100%;
             background-color: white;
-            padding: 10px 0;
-            display: flex;
-            justify-content: space-around;
-            border-top: 1px solid #ddd;
-            z-index: 9999;
+            z-index: 999999;
+            padding: 10px 20px;
+            border-top: 2px solid #f0f2f6;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
         }
-        .stButton button { width: 100%; border-radius: 10px; }
+
+        /* Estilo de los botones para que parezcan de App */
+        .stButton button {
+            width: 100%;
+            border-radius: 12px;
+            height: 3.5rem;
+            font-weight: bold;
+            border: 1px solid #d1d5db;
+        }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. CONEXIÓN INTELIGENTE
+# 2. CONEXIÓN A DATOS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=0)
-def cargar_todo():
+def cargar_datos():
     try:
-        # Intentamos leer la hoja completa y luego separamos por pestañas
-        # Esto es más seguro que buscarlas por nombre individual
-        peds = conn.read(worksheet="Pedidos")
-        pres = conn.read(worksheet="Presupuestos")
-        return peds, pres
+        p = conn.read(worksheet="Pedidos")
+        h = conn.read(worksheet="Presupuestos")
+        return p, h
     except:
         return None, None
 
-df_pedidos, df_presus = cargar_todo()
+df_pedidos, df_presus = cargar_datos()
 
-# Si falla la carga, mostramos un aviso claro
 if df_pedidos is None:
-    st.error("⚠️ Error de conexión. Revisa que en Google Sheets las pestañas se llamen 'Pedidos' y 'Presupuestos'.")
-    st.info("Si los nombres están bien, ve a Streamlit Cloud > Settings > Secrets y pega de nuevo tus claves.")
+    st.error("⚠️ Error de conexión con Google Sheets.")
     st.stop()
 
-# 3. LÓGICA PDF
-def crear_pdf(cliente, pieza, coste_mat, coste_tiem, precio_fin):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="PRESUPUESTO 3D", ln=True, align='C')
-    pdf.ln(10)
-    pdf.set_font("Arial", '', 12)
-    pdf.cell(200, 10, txt=f"Cliente: {cliente}", ln=True)
-    pdf.cell(200, 10, txt=f"Pieza: {pieza}", ln=True)
-    pdf.cell(200, 10, txt=f"Precio: {precio_fin:.2f} Euros", ln=True)
-    return pdf.output(dest="S").encode("latin-1")
-
-# 4. NAVEGACIÓN (ESTADO DE SESIÓN)
+# 3. NAVEGACIÓN
 if 'menu' not in st.session_state:
     st.session_state.menu = "Producción"
 
-# 5. CONTENIDO
+# 4. CUERPO DE LA APP (DENTRO DE UN DIV PARA EL SCROLL)
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
+
 st.title("🛠️ Xevytron 3D")
 
 if st.session_state.menu == "Calculadora":
     st.header("🧮 Calcular")
     c_n = st.text_input("Cliente")
     p_n = st.text_input("Pieza")
-    g = st.number_input("Gramos", 0.0)
-    h = st.number_input("Horas", 0.0)
+    col1, col2 = st.columns(2)
+    g = col1.number_input("Gramos", 0.0)
+    h = col2.number_input("Horas", 0.0)
+    m = st.slider("Beneficio %", 0, 200, 100)
+    
+    precio = ((24/1000*g) + (h*1.5)) * (1 + m/100)
+    st.metric("PRECIO RECOMENDADO", f"{precio:.2f} €")
+    
     if st.button("✅ GUARDAR"):
-        precio = ((24/1000*g) + (h*1.5)) * 2
         new_ped = pd.DataFrame([{"ID": len(df_pedidos)+1, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": c_n, "Pieza": p_n, "Estado": "Pendiente", "Precio": precio, "Gramos": g, "Horas": h, "Notas": ""}])
-        updated = pd.concat([df_pedidos, new_ped], ignore_index=True)
-        conn.update(worksheet="Pedidos", data=updated)
-        st.success("¡Guardado!")
+        conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, new_ped], ignore_index=True))
+        st.success("¡Pedido enviado al tablero!")
         st.cache_data.clear()
         st.rerun()
 
 elif st.session_state.menu == "Historial":
     st.header("📂 Presupuestos")
-    st.write("Aquí verás tus presupuestos guardados.")
-    st.dataframe(df_presus)
+    st.dataframe(df_presus, use_container_width=True)
 
-else: # Producción
+else: # Tablero de Producción
     st.header("📊 Producción")
     for est in ["Pendiente", "En Preparación", "En Ejecución", "Finalizado"]:
         with st.expander(f"📍 {est}", expanded=True):
             items = df_pedidos[df_pedidos["Estado"] == est]
             for i, r in items.iterrows():
-                st.write(f"**{r['Pieza']}** ({r['Cliente']})")
-                new_state = st.selectbox("Mover a:", ["Pendiente", "En Preparación", "En Ejecución", "Finalizado"], index=["Pendiente", "En Preparación", "En Ejecución", "Finalizado"].index(est), key=f"s{i}")
+                st.write(f"**{r['Pieza']}** - {r['Cliente']}")
+                new_state = st.selectbox("Estado:", ["Pendiente", "En Preparación", "En Ejecución", "Finalizado"], 
+                                         index=["Pendiente", "En Preparación", "En Ejecución", "Finalizado"].index(est), 
+                                         key=f"item_{r['ID']}")
                 if new_state != est:
-                    df_pedidos.loc[i, "Estado"] = new_state
+                    df_pedidos.loc[df_pedidos["ID"] == r["ID"], "Estado"] = new_state
                     conn.update(worksheet="Pedidos", data=df_pedidos)
                     st.cache_data.clear()
                     st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 6. MENÚ INFERIOR FIJO (BOTONES REPRODUCIDOS)
-st.markdown('<div class="nav-bar">', unsafe_allow_html=True)
+# 5. MENÚ INFERIOR (ESTE BLOQUE SIEMPRE VA AL FINAL DEL CÓDIGO)
+# Las columnas se meten en el último div generado, que el CSS fijará abajo.
 c1, c2, c3 = st.columns(3)
 with c1:
-    if st.button("📊 Tablero"):
+    if st.button("📊 Tablero", key="nav_p"):
         st.session_state.menu = "Producción"
         st.rerun()
 with c2:
-    if st.button("🧮 Calcular"):
+    if st.button("🧮 Calcular", key="nav_c"):
         st.session_state.menu = "Calculadora"
         st.rerun()
 with c3:
-    if st.button("📂 Historial"):
+    if st.button("📂 Historial", key="nav_h"):
         st.session_state.menu = "Historial"
         st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
