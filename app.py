@@ -12,12 +12,13 @@ st.set_page_config(
 )
 
 # --- DISEÑO DE BARRA INFERIOR FIJA (CSS) ---
-estilos_fijos = """
+estilos_app = """
     <style>
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
         .stDeployButton {display:none;}
+        [data-testid="stStatusWidget"] {display:none;}
         
         /* Contenedor flotante en la parte inferior */
         .nav-bar {
@@ -26,20 +27,26 @@ estilos_fijos = """
             left: 0;
             width: 100%;
             background-color: white;
-            padding: 10px;
+            padding: 10px 0;
             display: flex;
             justify-content: space-around;
             border-top: 1px solid #ddd;
             z-index: 999999;
         }
         
-        /* Espacio al final para que el contenido no quede tapado por el menú */
+        /* Ajuste para que los botones de Streamlit parezcan de app móvil */
+        .stButton > button {
+            width: 100%;
+            border-radius: 10px;
+        }
+
+        /* Espacio para que el contenido no quede tapado por el menú inferior */
         .main-content {
-            margin-bottom: 80px;
+            margin-bottom: 100px;
         }
     </style>
 """
-st.markdown(estilos_fijos, unsafe_allow_html=True)
+st.markdown(estilos_app, unsafe_allow_html=True)
 
 # 2. CONEXIÓN A DATOS
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -48,7 +55,7 @@ try:
     df_pedidos = conn.read(worksheet="Pedidos", ttl=0) 
     df_presus = conn.read(worksheet="Presupuestos", ttl=0) 
 except Exception as e:
-    st.error("Error al conectar con la base de datos.")
+    st.error("Error al conectar con las pestañas Pedidos y Presupuestos.")
     st.stop()
 
 # 3. LÓGICA DE PDF
@@ -67,7 +74,7 @@ def crear_pdf(cliente, pieza, coste_mat, coste_tiem, precio_fin):
     pdf.cell(200, 10, txt="Desglose:", ln=True)
     pdf.set_font("Arial", '', 12)
     pdf.cell(200, 10, txt=f"- Material: {coste_mat:.2f} Euros", ln=True)
-    pdf.cell(200, 10, txt=f"- Tiempo de máquina: {coste_tiem:.2f} Euros", ln=True)
+    pdf.cell(200, 10, txt=f"- Tiempo de maquina: {coste_tiem:.2f} Euros", ln=True)
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 14) 
     pdf.cell(200, 10, txt=f"TOTAL: {precio_fin:.2f} Euros", ln=True)
@@ -77,22 +84,12 @@ def crear_pdf(cliente, pieza, coste_mat, coste_tiem, precio_fin):
 if 'menu_activo' not in st.session_state:
     st.session_state.menu_activo = "Producción"
 
-# 5. CONTENIDO PRINCIPAL (Metido en un div para el margen inferior)
+# 5. CONTENIDO PRINCIPAL
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
 st.title("🛠️ Xevytron 3D")
 
 if st.session_state.menu_activo == "Calculadora":
-    st.header("🧮 Nueva Calculadora")
-    with st.expander("Datos del Cliente", expanded=True):
-        c1, c2 = st.columns(2)
-        cliente_n = c1.text_input("Cliente")
-        pieza_n = c2.text_input("Pieza")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        precio_kilo = st.number_input("Precio Filamento (€/kg)", value=24.0)
-        gramos = st.number_input("Gramos", value=0.0)
-    with col2:
-        horas = st.number_input("Horas", value=0.0)
-        precio_hora = st.number_input("
+    st.header("🧮 Calcular")
+    cliente_n = st.text_input("Nombre del Cliente")
+    pieza_n = st.text
