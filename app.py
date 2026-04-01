@@ -33,7 +33,7 @@ def crear_pdf(cliente, pieza, coste_mat, coste_tiem, precio_fin):
     pdf.cell(200, 10, txt=f"Cliente: {cliente}", ln=True)
     pdf.cell(200, 10, txt=f"Pieza: {pieza}", ln=True)
     pdf.ln(10)
-    pdf.set_font("Arial", 'B', 12)
+    pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt="Desglose:", ln=True)
     pdf.set_font("Arial", '', 12)
     pdf.cell(200, 10, txt=f"- Material: {coste_mat:.2f} Euros", ln=True)
