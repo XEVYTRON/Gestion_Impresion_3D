@@ -3,26 +3,46 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 from fpdf import FPDF
-from PIL import Image # IMPORTACIÓN ADICIONAL NECESARIA PARA CARGAR LA IMAGEN
+from PIL import Image
+import base64
+from io import BytesIO
 
-# 1. CONFIGURACIÓN DE PÁGINA (AQUÍ CARGAMOS Y ESTABLECEMOS TU LOGOTIPO COMO ICONO)
+# 1. FUNCIÓN PARA EL ICONO DE MÓVIL (Base64)
+def get_base64_of_bin_file(img_path):
+    try:
+        img = Image.open(img_path)
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode()
+    except:
+        return ""
+
+# Intentamos cargar tu logo para el icono
+logo_base64 = get_base64_of_bin_file("image_7.png")
+
+# 2. CONFIGURACIÓN DE PÁGINA
 try:
-    # Intenta cargar la imagen de tu logotipo
-    # Asegúrate de que el archivo 'image_7.png' esté en el mismo directorio que este script.
     logo_image = Image.open("image_7.png")
-except FileNotFoundError:
-    # Si no se encuentra el archivo, muestra un error y usa un emoji como respaldo
-    st.error("Error: No se encontró el archivo de imagen 'image_7.png'. Asegúrate de que el archivo esté en el mismo directorio que este script.")
-    logo_image = "🛠️" # Usar el emoji de herramientas como respaldo
+except:
+    logo_image = "🛠️"
 
 st.set_page_config(
     page_title="Xevytron 3D", 
-    page_icon=logo_image, # <--- Aquí usamos el objeto PIL.Image cargado
+    page_icon=logo_image, 
     layout="centered", 
     initial_sidebar_state="collapsed"
 )
 
-# --- ESTILOS CSS (DISEÑO PREMIUM ORIGINAL, BOTONES OSCUROS Y TARJETAS BLANCAS) ---
+# --- INYECCIÓN DE ICONO PARA PANTALLA DE INICIO (MÓVIL) ---
+if logo_base64:
+    st.markdown(f"""
+        <head>
+            <link rel="apple-touch-icon" href="data:image/png;base64,{logo_base64}">
+            <link rel="icon" sizes="192x192" href="data:image/png;base64,{logo_base64}">
+        </head>
+    """, unsafe_allow_html=True)
+
+# --- ESTILOS CSS (BOTONES OSCUROS Y TARJETAS BLANCAS) ---
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden;}
@@ -33,14 +53,14 @@ st.markdown("""
         
         .titulo-seccion { font-size: 22px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 20px; }
         
-        /* BOTONES DE NAVEGACIÓN Y ACCIONES: Gris Carbón Oscuro para que resalte el texto blanco */
+        /* BOTONES NAVEGACIÓN Y ACCIONES: Gris Carbón Oscuro */
         .stButton button { 
             width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; 
             text-transform: uppercase; border: 1px solid #212529; 
             background-color: #343a40 !important; color: #ffffff !important;
         }
 
-        /* TARJETAS: Se mantienen blancas */
+        /* TARJETAS: Blancas */
         .card-container { 
             background-color: #ffffff !important; 
             border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; 
@@ -57,34 +77,25 @@ st.markdown("""
         .factura-cliente { font-size: 18px; font-weight: bold; color: #111; margin: 0; }
         .factura-detalle { font-size: 16px; color: #6f42c1; font-weight: bold; margin: 0; }
         
-        /* Icono PDF y Engranaje: Fondo Gris Carbón Oscuro */
+        /* Icono PDF y Engranaje */
         [data-testid="stDownloadButton"] button { 
             height: 2.8rem; width: 100%; border-radius: 8px; 
             background-color: #343a40 !important; border: 1px solid #212529 !important;
             color: #ffffff !important;
         }
-        
-        /* Ajuste específico para que el texto del botón de descarga sea blanco */
-        [data-testid="stDownloadButton"] button p {
-            color: white !important;
-        }
+        [data-testid="stDownloadButton"] button p { color: white !important; font-weight: bold; }
 
         .stExpander { border: none !important; }
         .stExpander > details > summary { 
             background-color: #343a40 !important; border-radius: 8px; 
             border: 1px solid #212529 !important; height: 2.8rem; 
             display: flex; align-items: center; justify-content: center;
-            color: white !important;
         }
-        
-        /* Color de la flechita del expander en blanco */
-        .stExpander > details > summary svg {
-            fill: white !important;
-        }
+        .stExpander > details > summary svg { fill: white !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. CONEXIÓN A DATOS
+# 3. CONEXIÓN A DATOS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=10)
@@ -106,7 +117,7 @@ if df_pedidos is None:
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 
-# 3. LÓGICA DE PDF
+# 4. LÓGICA DE PDF
 def crear_factura_pdf(id_fac, fecha, cliente, pieza, gramos, horas, total, notas=""):
     pdf = FPDF()
     pdf.add_page()
@@ -124,7 +135,7 @@ def crear_factura_pdf(id_fac, fecha, cliente, pieza, gramos, horas, total, notas
     pdf.cell(200, 10, txt=f"TOTAL: {total:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
-# 4. NAVEGACIÓN
+# 5. NAVEGACIÓN
 if 'seccion' not in st.session_state:
     st.session_state.seccion = "TRABAJOS"
 
@@ -134,7 +145,7 @@ if nav2.button("NUEVO"): st.session_state.seccion = "NUEVO TRABAJO"; st.rerun()
 if nav3.button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# 5. VISTA: TRABAJOS (CON SINCRONIZACIÓN Y CREACIÓN AUTOMÁTICA)
+# 6. VISTA: TRABAJOS
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     filtro = st.pills("Estado:", ESTADOS, default="Pendiente")
@@ -166,7 +177,8 @@ if st.session_state.seccion == "TRABAJOS":
                         if st.form_submit_button("Ok"):
                             df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
                             conn.update(worksheet="Pedidos", data=df_pedidos)
-                            # Sincronización o Recreación de Factura
+                            
+                            # Sincronizar o Recrear Factura
                             id_b = str(r['ID'])
                             df_facturas['ID_s'] = df_facturas['ID'].astype(str)
                             idx = df_facturas[df_facturas['ID_s'] == id_b].index
@@ -188,7 +200,7 @@ if st.session_state.seccion == "TRABAJOS":
                 st.cache_data.clear(); st.rerun()
         st.divider()
 
-# 6. VISTA: NUEVO TRABAJO
+# 7. VISTA: NUEVO TRABAJO
 elif st.session_state.seccion == "NUEVO TRABAJO":
     st.markdown('<p class="titulo-seccion">Nuevo Trabajo</p>', unsafe_allow_html=True)
     c_nom = st.text_input("Cliente")
@@ -209,7 +221,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
             conn.update(worksheet="Facturas", data=pd.concat([df_facturas, row.drop(columns=['Estado'])], ignore_index=True))
             st.cache_data.clear(); st.success("Guardado"); st.rerun()
 
-# 7. VISTA: FACTURAS
+# 8. VISTA: FACTURAS
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
     if df_facturas.empty:
