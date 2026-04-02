@@ -7,7 +7,7 @@ from fpdf import FPDF
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Xevytron 3D", layout="centered", initial_sidebar_state="collapsed")
 
-# --- ESTILOS CSS (BOTONES OSCUROS Y TARJETAS BLANCAS) ---
+# --- ESTILOS CSS (DISEÑO MÓVIL CON MENÚ FIJO INFERIOR) ---
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden;}
@@ -18,14 +18,33 @@ st.markdown("""
         
         .titulo-seccion { font-size: 22px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 20px; }
         
-        /* BOTONES DE NAVEGACIÓN: Gris Carbón Oscuro para que resalte el texto blanco */
-        .stButton button { 
-            width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; 
-            text-transform: uppercase; border: 1px solid #212529; 
-            background-color: #343a40 !important; color: #ffffff !important;
+        /* CONTENEDOR PRINCIPAL: Añadimos espacio abajo para que el menú no tape nada */
+        .main-content {
+            margin-bottom: 100px;
         }
 
-        /* TARJETAS: Se mantienen blancas */
+        /* MENÚ INFERIOR FIJO: Esto lo mantiene siempre abajo */
+        div[data-testid="stVerticalBlock"] > div:last-child {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: white;
+            z-index: 1000;
+            padding: 10px 10px 20px 10px;
+            border-top: 1px solid #ddd;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        }
+
+        /* BOTONES DE NAVEGACIÓN (Gris Carbón Oscuro) */
+        .stButton button { 
+            width: 100%; height: 3.5rem; border-radius: 10px; font-weight: 600; 
+            text-transform: uppercase; border: 1px solid #212529; 
+            background-color: #343a40 !important; color: #ffffff !important;
+            font-size: 12px !important;
+        }
+
+        /* TARJETAS: Blancas e intocables */
         .card-container { 
             background-color: #ffffff !important; 
             border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; 
@@ -42,17 +61,13 @@ st.markdown("""
         .factura-cliente { font-size: 18px; font-weight: bold; color: #111; margin: 0; }
         .factura-detalle { font-size: 16px; color: #6f42c1; font-weight: bold; margin: 0; }
         
-        /* Icono PDF y Engranaje: Fondo Gris Carbón Oscuro */
+        /* Iconos PDF y Engranaje: Fondo Gris Carbón Oscuro */
         [data-testid="stDownloadButton"] button { 
             height: 2.8rem; width: 100%; border-radius: 8px; 
             background-color: #343a40 !important; border: 1px solid #212529 !important;
             color: #ffffff !important;
         }
-        
-        /* Ajuste específico para que el texto del botón de descarga sea blanco */
-        [data-testid="stDownloadButton"] button p {
-            color: white !important;
-        }
+        [data-testid="stDownloadButton"] button p { color: white !important; font-weight: bold; }
 
         .stExpander { border: none !important; }
         .stExpander > details > summary { 
@@ -61,11 +76,7 @@ st.markdown("""
             display: flex; align-items: center; justify-content: center;
             color: white !important;
         }
-        
-        /* Color de la flechita del expander en blanco */
-        .stExpander > details > summary svg {
-            fill: white !important;
-        }
+        .stExpander > details > summary svg { fill: white !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -109,34 +120,23 @@ def crear_factura_pdf(id_fac, fecha, cliente, pieza, gramos, horas, total, notas
     pdf.cell(200, 10, txt=f"TOTAL: {total:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
-# 4. NAVEGACIÓN
+# 4. INICIO DEL CONTENIDO (Wrapper para scroll)
 if 'seccion' not in st.session_state:
     st.session_state.seccion = "TRABAJOS"
 
-nav1, nav2, nav3 = st.columns(3)
-if nav1.button("TRABAJOS"): st.session_state.seccion = "TRABAJOS"; st.rerun()
-if nav2.button("NUEVO TRABAJO"): st.session_state.seccion = "NUEVO TRABAJO"; st.rerun()
-if nav3.button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
-st.divider()
+st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
-# 5. VISTA: TRABAJOS (CON SINCRONIZACIÓN Y CREACIÓN AUTOMÁTICA)
+# VISTA: TRABAJOS
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
-    filtro = st.pills("Estado:", ESTADOS, default="Pendiente")
+    filtro = st.pills("Estado:", ESTADOS, default="Pendiente", key="f_pills")
     items = df_pedidos[df_pedidos["Estado"] == filtro]
     
     for i, r in items.iterrows():
         with st.container():
-            col_dat, col_pdf, col_ed = st.columns([2.2, 0.6, 1.2])
+            col_dat, col_pdf, col_ed = st.columns([2.2, 0.7, 1.1])
             with col_dat:
-                st.markdown(f"""
-                    <div class="card-container">
-                        <p class="trabajo-fecha">{r['Fecha']}</p>
-                        <p class="trabajo-cliente">{r['Cliente']}</p>
-                        <p class="trabajo-pieza">{r['Pieza']}</p>
-                        <p class="trabajo-precio">{r['Precio']} €</p>
-                    </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f'<div class="card-container"><p class="trabajo-fecha">{r["Fecha"]}</p><p class="trabajo-cliente">{r["Cliente"]}</p><p class="trabajo-pieza">{r["Pieza"]}</p><p class="trabajo-precio">{r["Precio"]} €</p></div>', unsafe_allow_html=True)
             with col_pdf:
                 n_v = r['Notas'] if pd.notna(r['Notas']) else ""
                 pdf = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), n_v)
@@ -151,32 +151,20 @@ if st.session_state.seccion == "TRABAJOS":
                         if st.form_submit_button("Ok"):
                             df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
                             conn.update(worksheet="Pedidos", data=df_pedidos)
-                            
-                            # Sincronizar o Recrear Factura
-                            id_buscado = str(r['ID'])
-                            df_facturas['ID_str'] = df_facturas['ID'].astype(str)
-                            idx = df_facturas[df_facturas['ID_str'] == id_buscado].index
-                            
+                            id_b = str(r['ID'])
+                            df_facturas['ID_s'] = df_facturas['ID'].astype(str)
+                            idx = df_facturas[df_facturas['ID_s'] == id_b].index
                             if not idx.empty:
                                 df_facturas.loc[idx, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
-                                df_final_f = df_facturas.drop(columns=['ID_str'])
-                                conn.update(worksheet="Facturas", data=df_final_f)
+                                conn.update(worksheet="Facturas", data=df_facturas.drop(columns=['ID_s']))
                             else:
-                                nueva_f = pd.DataFrame([{
-                                    "ID": r['ID'], "Fecha": r['Fecha'], "Cliente": u_cli, 
-                                    "Pieza": u_pie, "Precio": u_pre, "Gramos": r['Gramos'], 
-                                    "Horas": r['Horas'], "Notas": u_not
-                                }])
-                                df_final_f = pd.concat([df_facturas.drop(columns=['ID_str']), nueva_f], ignore_index=True)
-                                conn.update(worksheet="Facturas", data=df_final_f)
-                            
-                            st.cache_data.clear(); st.success("¡Sincronizado!"); st.rerun()
-                    
+                                nueva_f = pd.DataFrame([{"ID": r['ID'], "Fecha": r['Fecha'], "Cliente": u_cli, "Pieza": u_pie, "Precio": u_pre, "Gramos": r['Gramos'], "Horas": r['Horas'], "Notas": u_not}])
+                                conn.update(worksheet="Facturas", data=pd.concat([df_facturas.drop(columns=['ID_s']), nueva_f], ignore_index=True))
+                            st.cache_data.clear(); st.rerun()
                     if st.button("🗑️", key=f"del_{r['ID']}", type="primary"):
                         df_pedidos = df_pedidos.drop(i)
                         conn.update(worksheet="Pedidos", data=df_pedidos)
                         st.cache_data.clear(); st.rerun()
-            
             nuevo_e = st.select_slider("Mover:", options=ESTADOS, value=filtro, key=f"sl_{r['ID']}", label_visibility="collapsed")
             if nuevo_e != filtro:
                 df_pedidos.loc[i, "Estado"] = nuevo_e
@@ -184,7 +172,7 @@ if st.session_state.seccion == "TRABAJOS":
                 st.cache_data.clear(); st.rerun()
         st.divider()
 
-# 6. VISTA: NUEVO TRABAJO
+# VISTA: NUEVO TRABAJO
 elif st.session_state.seccion == "NUEVO TRABAJO":
     st.markdown('<p class="titulo-seccion">Nuevo Trabajo</p>', unsafe_allow_html=True)
     c_nom = st.text_input("Cliente")
@@ -193,44 +181,52 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
     gr = ca.number_input("Gramos", min_value=0.0, step=1.0)
     hr = cb.number_input("Horas", min_value=0.0, step=0.5)
     mgn = st.select_slider("Margen %", options=[0, 25, 50, 75, 100, 150, 200, 300], value=100)
-    
     total = ((24/1000 * gr) + (hr * 1.0)) * (1 + mgn/100)
     st.markdown(f"### TOTAL: {total:.2f} €")
     nts = st.text_area("Notas")
-    
     if st.button("GUARDAR TRABAJO"):
         if c_nom and p_nom:
             f_h = datetime.now().strftime("%d/%m/%Y")
             id_u = datetime.now().strftime("%y%m%d%H%M%S")
-            row_p = pd.DataFrame([{"ID": id_u, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
-            row_f = pd.DataFrame([{"ID": id_u, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
-            conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, row_p], ignore_index=True))
-            conn.update(worksheet="Facturas", data=pd.concat([df_facturas, row_f], ignore_index=True))
+            row = pd.DataFrame([{"ID": id_u, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
+            conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, row], ignore_index=True))
+            conn.update(worksheet="Facturas", data=pd.concat([df_facturas, row.drop(columns=['Estado'])], ignore_index=True))
             st.cache_data.clear(); st.success("Guardado"); st.rerun()
 
-# 7. VISTA: FACTURAS (DISEÑO CLÁSICO)
+# VISTA: FACTURAS
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
     if df_facturas.empty:
         st.info("No hay facturas registradas.")
     else:
-        df_inv = df_facturas.iloc[::-1]
-        for i, r in df_inv.iterrows():
+        for i, r in df_facturas.iloc[::-1].iterrows():
             with st.container():
-                st.markdown(f"""
-                    <div class="card-container">
-                        <p class="factura-meta">{r['Fecha']} | ID: {r['ID']}</p>
-                        <p class="factura-cliente">{r['Cliente']}</p>
-                        <p class="factura-detalle">{r['Pieza']} - {r['Precio']} €</p>
-                    </div>
-                """, unsafe_allow_html=True)
-                c_f1, c_f2 = st.columns(2)
-                with c_f1:
-                    pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), r['Notas'])
-                    st.download_button("PDF", data=pdf_bytes, file_name=f"F_{r['Cliente']}.pdf", key=f"f_dl_{i}")
-                with c_f2:
+                st.markdown(f'<div class="card-container"><p class="factura-meta">{r["Fecha"]} | ID: {r["ID"]}</p><p class="factura-cliente">{r["Cliente"]}</p><p class="factura-detalle">{r["Pieza"]} - {r["Precio"]} €</p></div>', unsafe_allow_html=True)
+                c1, c2 = st.columns(2)
+                with c1:
+                    pdf = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), r['Notas'])
+                    st.download_button("PDF", data=pdf, file_name=f"F_{r['Cliente']}.pdf", key=f"f_dl_{i}")
+                with c2:
                     if st.button("🗑️", key=f"f_del_{i}"):
                         df_facturas = df_facturas.drop(i)
                         conn.update(worksheet="Facturas", data=df_facturas)
                         st.cache_data.clear(); st.rerun()
                 st.divider()
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# 5. MENÚ DE NAVEGACIÓN INFERIOR FIJO (Siempre al final del código)
+st.markdown("---") # Separador para el modo escritorio
+nav1, nav2, nav3 = st.columns(3)
+with nav1:
+    if st.button("TRABAJOS", key="nav_trab"):
+        st.session_state.seccion = "TRABAJOS"
+        st.rerun()
+with nav2:
+    if st.button("NUEVO TRABAJO", key="nav_nuevo"):
+        st.session_state.seccion = "NUEVO TRABAJO"
+        st.rerun()
+with nav3:
+    if st.button("FACTURAS", key="nav_fact"):
+        st.session_state.seccion = "FACTURAS"
+        st.rerun()
