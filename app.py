@@ -59,25 +59,20 @@ st.set_page_config(page_title="Xevytron 3D", page_icon=icon, layout="centered")
 if logo_b64:
     st.markdown(f'<head><link rel="apple-touch-icon" href="data:image/png;base64,{logo_b64}"></head>', unsafe_allow_html=True)
 
-# --- 3. ESTILOS CSS (COLOR MORADO APLICADO AL NOMBRE) ---
+# --- 3. ESTILOS CSS ---
 st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] { overflow-x: hidden !important; width: 100vw; }
         #MainMenu, footer, header, .stDeployButton { visibility: hidden; display: none; }
         .titulo-seccion { font-size: 20px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 15px; }
-        
         .stButton button { width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; background-color: #343a40 !important; color: white !important; }
-        
         .card-container { 
             background-color: #ffffff !important; border-radius: 10px; padding: 12px; border: 1px solid #e0e0e0; 
             border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 10px;
         }
-
-        /* Estilos de texto dentro de las tarjetas */
         .card-fecha { font-size: 10px; color: #999; margin: 0; text-transform: uppercase; }
         .card-nombre { font-size: 18px; font-weight: 800; color: #6f42c1 !important; margin: 0; text-transform: uppercase; line-height: 1.2; }
         .card-info { font-size: 14px; color: #555; margin: 0; }
-
         [data-testid="stDownloadButton"] button, .stExpander > details > summary { 
             height: 3.1rem; width: 100%; border-radius: 8px; background-color: #343a40 !important; color: white !important; margin-bottom: 8px;
         }
@@ -114,11 +109,23 @@ if nav_cols[1].button("NUEVO"): st.session_state.seccion = "NUEVO TRABAJO"; st.r
 if nav_cols[2].button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# --- 6. VISTA: TRABAJOS ---
+# --- 6. VISTA: TRABAJOS (CON BUSCADOR) ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
-    filtro = st.pills("Filtrar por:", ESTADOS, default="Pendiente")
-    items = df_p[df_p["Estado"] == filtro]
+    
+    # BUSCADOR INTELIGENTE
+    busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan o Casco").lower()
+    
+    filtro_estado = st.pills("Filtrar por estado:", ESTADOS, default="Pendiente")
+    
+    # Lógica de filtrado doble: por estado Y por texto
+    items = df_p[df_p["Estado"] == filtro_estado]
+    if busqueda:
+        items = items[items['Cliente'].str.lower().str.contains(busqueda) | 
+                      items['Pieza'].str.lower().str.contains(busqueda)]
+    
+    if items.empty:
+        st.info("No se han encontrado trabajos con ese nombre.")
     
     for i, r in items.iterrows():
         id_actual = str(r['ID'])
@@ -202,12 +209,22 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
             conn.update(worksheet="Facturas", data=pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True))
             st.cache_data.clear(); st.success("¡Trabajo guardado!"); st.rerun()
 
-# --- 8. VISTA: FACTURAS ---
+# --- 8. VISTA: FACTURAS (CON BUSCADOR) ---
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
-    if df_f.empty: st.info("No hay facturas registradas.")
+    
+    # BUSCADOR INTELIGENTE EN FACTURAS
+    busqueda_f = st.text_input("🔍 Buscar en historial...", placeholder="Nombre o pieza...").lower()
+    
+    items_f = df_f.iloc[::-1]
+    if busqueda_f:
+        items_f = items_f[items_f['Cliente'].str.lower().str.contains(busqueda_f) | 
+                          items_f['Pieza'].str.lower().str.contains(busqueda_f)]
+    
+    if items_f.empty:
+        st.info("No hay facturas que coincidan con la búsqueda.")
     else:
-        for i, r in df_f.iloc[::-1].iterrows():
+        for i, r in items_f.iterrows():
             with st.container():
                 st.markdown(f"""
                     <div class="card-container">
