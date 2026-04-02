@@ -7,7 +7,7 @@ from fpdf import FPDF
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Xevytron 3D", layout="centered", initial_sidebar_state="collapsed")
 
-# --- ESTILOS CSS UNIFICADOS (MOBILE FIRST) ---
+# --- ESTILOS CSS UNIFICADOS (EL FORMATO QUE TE GUSTA) ---
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden;}
@@ -25,15 +25,20 @@ st.markdown("""
             width: 100%; height: 3rem; border-radius: 8px; font-size: 14px;
             font-weight: 600; text-transform: uppercase; border: 1px solid #ddd;
         }
-        
+
+        /* FORMATO DE TARJETA QUE TE GUSTA (UNIFICADO) */
         .card-container {
-            background-color: #fff; border-radius: 10px; padding: 15px;
-            border: 1px solid #e0e0e0; border-left: 5px solid #007bff;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 5px;
+            background-color: #fff; 
+            border-radius: 10px; 
+            padding: 15px;
+            border: 1px solid #e0e0e0; 
+            border-left: 5px solid #6f42c1; /* El color morado de facturas */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+            margin-bottom: 5px;
         }
-        .cliente-txt { font-size: 11px; color: #777; text-transform: uppercase; margin: 0; }
-        .pieza-txt { font-size: 18px; font-weight: bold; color: #111; margin: 0; }
-        .precio-txt { font-size: 16px; color: #28a745; font-weight: bold; margin: 0; }
+        .info-superior { font-size: 11px; color: #777; text-transform: uppercase; margin: 0; }
+        .info-principal { font-size: 18px; font-weight: bold; color: #111; margin: 0; }
+        .info-resaltada { font-size: 16px; color: #6f42c1; font-weight: bold; margin: 0; }
         
         [data-testid="stDownloadButton"] button {
             height: 2.5rem; padding: 0; border-radius: 5px; background-color: #f8f9fa;
@@ -56,7 +61,7 @@ def cargar_datos():
 df_pedidos, df_facturas = cargar_datos()
 
 if df_pedidos is None:
-    st.error("⚠️ Error: Revisa que las pestañas 'Pedidos' y 'Facturas' existan en Google Sheets.")
+    st.error("⚠️ Error: Asegúrate de tener las pestañas 'Pedidos' y 'Facturas' en tu Google Sheets.")
     st.stop()
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
@@ -66,7 +71,7 @@ def crear_factura_pdf(id_fac, fecha, cliente, pieza, gramos, horas, total):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="FACTURA / PRESUPUESTO XEVYTRON 3D", ln=True, align='C')
+    pdf.cell(200, 10, txt="XEVYTRON 3D - FACTURA", ln=True, align='C')
     pdf.ln(5)
     pdf.set_font("Arial", '', 11)
     pdf.cell(200, 8, txt=f"ID: {id_fac} | Fecha: {fecha}", ln=True)
@@ -86,11 +91,11 @@ if 'seccion' not in st.session_state:
 
 c1, c2, c3 = st.columns(3)
 if c1.button("TRABAJOS"): st.session_state.seccion = "TRABAJOS"; st.rerun()
-if c2.button("NUEVO"): st.session_state.seccion = "NUEVO TRABAJO"; st.rerun()
+if c2.button("NUEVO TRABAJO"): st.session_state.seccion = "NUEVO TRABAJO"; st.rerun()
 if c3.button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# 5. VISTA: TRABAJOS
+# 5. VISTA: TRABAJOS (CON EL FORMATO DE FACTURAS)
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     filtro = st.pills("Estado:", ESTADOS, default="Pendiente", label_visibility="collapsed")
@@ -101,26 +106,29 @@ if st.session_state.seccion == "TRABAJOS":
     else:
         for i, r in items.iterrows():
             with st.container():
+                # Formato idéntico al de facturas
                 col_datos, col_pdf = st.columns([4, 1])
                 with col_datos:
                     st.markdown(f"""
-                        <div style="padding-left: 5px;">
-                            <p class="cliente-txt">{r['Cliente']}</p>
-                            <p class="pieza-txt">{r['Pieza']}</p>
-                            <p class="precio-txt">{r['Precio']} €</p>
+                        <div class="card-container">
+                            <p class="info-superior">{r['Cliente']}</p>
+                            <p class="info-principal">{r['Pieza']}</p>
+                            <p class="info-resaltada">{r['Precio']} €</p>
                         </div>
                     """, unsafe_allow_html=True)
                 with col_pdf:
                     pdf_b = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']))
                     st.download_button("📄", data=pdf_b, file_name=f"Factura_{r['Cliente']}.pdf", key=f"pdf_{r['ID']}")
                 
+                # Deslizador de estado
                 nuevo_e = st.select_slider("Estado:", options=ESTADOS, value=filtro, key=f"sl_{r['ID']}", label_visibility="collapsed")
                 if nuevo_e != filtro:
                     df_pedidos.loc[i, "Estado"] = nuevo_e
                     conn.update(worksheet="Pedidos", data=df_pedidos)
                     st.cache_data.clear(); st.rerun()
                 
-                with st.expander("Editar / Borrar"):
+                # Detalles / Edición
+                with st.expander("Detalles / Editar"):
                     with st.form(f"edit_{r['ID']}"):
                         e_cli = st.text_input("Cliente", value=r['Cliente'])
                         e_pie = st.text_input("Pieza", value=r['Pieza'])
@@ -159,38 +167,33 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
                 
                 conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, nuevo_p], ignore_index=True))
                 conn.update(worksheet="Facturas", data=pd.concat([df_facturas, nueva_f], ignore_index=True))
-                st.cache_data.clear(); st.success("¡Guardado!")
+                st.cache_data.clear(); st.success("¡Guardado en Trabajos y Facturas!")
             else: st.warning("Faltan datos.")
 
-# 7. VISTA: FACTURAS (CON OPCIÓN DE BORRAR)
+# 7. VISTA: FACTURAS (MANTIENE EL FORMATO QUE TE GUSTA)
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Registro de Facturas</p>', unsafe_allow_html=True)
     if df_facturas.empty:
         st.info("No hay facturas registradas.")
     else:
-        # Mostramos las facturas de más reciente a más antigua
         df_inv = df_facturas.iloc[::-1]
         for i, r in df_inv.iterrows():
             with st.container():
                 st.markdown(f"""
-                <div class="card-container" style="border-left-color: #6f42c1;">
-                    <p class="cliente-txt">{r['Fecha']} | ID: {r['ID']}</p>
-                    <p class="pieza-txt">{r['Cliente']}</p>
-                    <p class="precio-txt" style="color: #6f42c1;">{r['Pieza']} - {r['Precio']} €</p>
+                <div class="card-container">
+                    <p class="info-superior">{r['Fecha']} | ID: {r['ID']}</p>
+                    <p class="info-principal">{r['Cliente']}</p>
+                    <p class="info-resaltada">{r['Pieza']} - {r['Precio']} €</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Botón de Descarga
-                pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']))
-                st.download_button("📩 Descargar PDF", data=pdf_bytes, file_name=f"Factura_{r['Cliente']}.pdf", key=f"dl_f_{i}")
-                
-                # NUEVO: Botón de Borrar Factura
-                if st.button("🗑️ Borrar esta Factura", key=f"del_f_{i}", type="secondary"):
-                    # Eliminamos la fila por su índice original
-                    df_facturas = df_facturas.drop(i)
-                    conn.update(worksheet="Facturas", data=df_facturas)
-                    st.cache_data.clear()
-                    st.success("Factura eliminada.")
-                    st.rerun()
-                
+                c_f1, c_f2 = st.columns(2)
+                with c_f1:
+                    pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']))
+                    st.download_button("📩 Descargar PDF", data=pdf_bytes, file_name=f"Factura_{r['Cliente']}.pdf", key=f"dl_f_{i}")
+                with c_f2:
+                    if st.button("🗑️ Borrar Factura", key=f"del_f_{i}"):
+                        df_facturas = df_facturas.drop(i)
+                        conn.update(worksheet="Facturas", data=df_facturas)
+                        st.cache_data.clear(); st.rerun()
                 st.divider()
