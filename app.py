@@ -56,48 +56,72 @@ except: icon = "🛠️"
 
 st.set_page_config(page_title="Xevytron 3D", page_icon=icon, layout="centered")
 
-# --- 3. ESTILOS CSS (INCLUYE EL LOGO DE FONDO EN LA NAV) ---
+# --- 3. ESTILOS CSS (DISEÑO VERTICAL Y MARCA DE AGUA OMNIPRESENTE) ---
 st.markdown(f"""
     <style>
-        html, body, [data-testid="stAppViewContainer"] {{ overflow-x: hidden !important; width: 100vw; }}
+        /* Bloqueo total de movimiento lateral y desbordes */
+        html, body, [data-testid="stAppViewContainer"] {{
+            overflow-x: hidden !important;
+            max-width: 100vw !important;
+            margin: 0; padding: 0;
+            background-color: #f8f9fa;
+        }}
+
         #MainMenu, footer, header, .stDeployButton {{ visibility: hidden; display: none; }}
-        .titulo-seccion {{ font-size: 20px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 15px; }}
         
-        /* BOTONES NAVEGACIÓN SUPERIOR */
+        .titulo-seccion {{ font-size: 20px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 20px; color: #333; }}
+        
+        /* BOTONES NAVEGACIÓN SUPERIOR (Un toque de desenfoque de fondo) */
         .stButton button {{ 
             width: 100%; height: 3.5rem; border-radius: 8px; font-weight: 600; 
             text-transform: uppercase; border: 1px solid #212529; 
-            background-color: rgba(52, 58, 64, 0.9) !important; color: white !important;
-            backdrop-filter: blur(2px); /* Un toque moderno */
-        }}
-        
-        /* CONTENEDOR DEL LOGO DE FONDO (MARCA DE AGUA) */
-        .nav-watermark {{
-            position: absolute;
-            top: -10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 180px;
-            opacity: 0.12; /* Ajusta este valor para que se vea más o menos (0.0 a 1.0) */
-            z-index: -1;
-            pointer-events: none;
+            background-color: rgba(52, 58, 64, 0.95) !important; color: white !important;
+            backdrop-filter: blur(2px);
         }}
 
+        /* --- MARCA DE AGUA OMNIPRESENTE Y GRANDE (DETRÁS DE TODO) --- */
+        body::before {{
+            content: "";
+            position: fixed; /* Anclado a la pantalla del móvil */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%); /* Centrado perfecto */
+            width: 350px; /* Tamaño grande y omnipresente */
+            height: 350px;
+            background-image: url("data:image/png;base64,{logo_b64}");
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: contain;
+            opacity: 0.15; /* Sutil pero visible (ajusta este valor 0.0 a 1.0) */
+            z-index: -1; /* Detrás de todas las tarjetas y botones */
+            pointer-events: none; /* Para que no moleste si tocas la pantalla */
+        }}
+
+        /* TARJETAS BLANCAS (Mantenemos el diseño limpio) */
         .card-container {{ 
-            background-color: #ffffff !important; border-radius: 10px; padding: 12px; border: 1px solid #e0e0e0; 
-            border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 10px;
+            background-color: #ffffff !important; border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; 
+            border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+            margin-bottom: 10px; width: 100%; box-sizing: border-box;
+            position: relative; /* Asegura que la tarjeta esté encima de la marca de agua */
+            z-index: 1;
         }}
         .card-fecha {{ font-size: 10px; color: #999; margin: 0; text-transform: uppercase; }}
-        .card-nombre {{ font-size: 18px; font-weight: 800; color: #6f42c1 !important; margin: 0; text-transform: uppercase; line-height: 1.2; }}
-        .card-info {{ font-size: 14px; color: #555; margin: 0; }}
-        
+        .card-nombre {{ font-size: 20px; font-weight: 800; color: #6f42c1 !important; margin: 0; text-transform: uppercase; line-height: 1.1; }}
+        .card-info {{ font-size: 16px; color: #555; margin: 0; }}
+
+        /* BOTONES DE ACCIÓN (Ajuste para estar encima de la marca de agua) */
         [data-testid="stDownloadButton"] button, .stExpander > details > summary {{ 
-            height: 3.1rem; width: 100%; border-radius: 8px; background-color: #343a40 !important; color: white !important; margin-bottom: 8px;
+            height: 3.2rem; width: 100%; border-radius: 8px; 
+            background-color: #343a40 !important; color: white !important; margin-bottom: 8px;
+            position: relative; z-index: 1;
         }}
+        .stExpander {{ border: none !important; width: 100% !important; }}
+        
+        .stSelectbox {{ margin-bottom: 10px; width: 100% !important; position: relative; z-index: 1;}}
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. CONEXIÓN Y DATOS ---
+# --- 4. CONEXIÓN Y DATOS (CON LIMPIEZA DE ID) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 if 'v_menu' not in st.session_state: st.session_state.v_menu = {}
 
@@ -115,24 +139,19 @@ def cargar_datos():
     except: return None, None
 
 df_p, df_f = cargar_datos()
-if df_p is None: st.error("Error de conexión"); st.stop()
+if df_p is None: st.error("Error al conectar con Google Sheets"); st.stop()
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 
-# --- 5. NAVEGACIÓN CON LOGO DE FONDO ---
+# --- 5. NAVEGACIÓN ---
 if 'seccion' not in st.session_state: st.session_state.seccion = "TRABAJOS"
-
-# Aquí inyectamos el logo justo antes de los botones
-if logo_b64:
-    st.markdown(f'<img src="data:image/png;base64,{logo_b64}" class="nav-watermark">', unsafe_allow_html=True)
-
 nav_cols = st.columns(3)
 if nav_cols[0].button("TRABAJOS"): st.session_state.seccion = "TRABAJOS"; st.rerun()
 if nav_cols[1].button("NUEVO"): st.session_state.seccion = "NUEVO TRABAJO"; st.rerun()
 if nav_cols[2].button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# --- 6. VISTA: TRABAJOS ---
+# --- 6. VISTA: TRABAJOS (CON BUSCADOR) ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan o Casco").lower()
@@ -146,6 +165,7 @@ if st.session_state.seccion == "TRABAJOS":
     for i, r in items.iterrows():
         id_actual = str(r['ID'])
         ver = st.session_state.v_menu.get(id_actual, 0)
+        
         with st.container():
             st.markdown(f"""
                 <div class="card-container">
@@ -154,71 +174,105 @@ if st.session_state.seccion == "TRABAJOS":
                     <p class="card-info">{r['Pieza']} | <b>{r['Precio']} €</b></p>
                 </div>
             """, unsafe_allow_html=True)
+            
             if r['Imagen'] and len(str(r['Imagen'])) > 100:
                 st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=150)
-            
+
             nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_actual}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
                 df_p.loc[i, "Estado"] = nuevo_e
-                conn.update(worksheet="Pedidos", data=df_p); st.cache_data.clear(); st.rerun()
+                conn.update(worksheet="Pedidos", data=df_p)
+                st.cache_data.clear(); st.rerun()
             
-            with st.expander("MODIFICAR ⚙️", key=f"e_{id_actual}_{ver}"):
+            with st.expander("MODIFICAR TRABAJO ⚙️", key=f"e_{id_actual}_{ver}"):
                 with st.form(f"f_{id_actual}_{ver}"):
                     u_cli = st.text_input("Cliente", value=r['Cliente'])
                     u_pie = st.text_input("Pieza", value=r['Pieza'])
                     u_pre = st.number_input("Precio", value=float(r['Precio']))
                     u_not = st.text_area("Notas", value=r['Notas'])
                     u_img = st.file_uploader("Nueva Foto", type=['jpg', 'jpeg', 'png'])
-                    if st.form_submit_button("GUARDAR"):
+                    
+                    if st.form_submit_button("GUARDAR CAMBIOS"):
                         img_64 = procesar_foto(u_img) if u_img else r['Imagen']
-                        df_p.loc[df_p['ID'].astype(str) == id_actual, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
+                        # 1. En Pedidos
+                        idx_p = df_p[df_p['ID'].astype(str) == id_actual].index
+                        df_p.loc[idx_p, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
                         conn.update(worksheet="Pedidos", data=df_p)
+                        # 2. En Facturas (Sincronización)
                         idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
                         if not idx_f.empty:
                             df_f.loc[idx_f, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
                             conn.update(worksheet="Facturas", data=df_f)
                         st.session_state.v_menu[id_actual] = ver + 1
                         st.cache_data.clear(); st.rerun()
-                if st.button("🗑️ ELIMINAR", key=f"d_{id_actual}"):
-                    df_p = df_p[df_p['ID'].astype(str) != id_actual]; conn.update(worksheet="Pedidos", data=df_p)
-                    df_f = df_f[df_f['ID'].astype(str) != id_actual]; conn.update(worksheet="Facturas", data=df_f)
+
+                if st.button("🗑️ ELIMINAR PERMANENTE", key=f"d_{id_actual}"):
+                    df_p = df_p[df_p['ID'].astype(str) != id_actual]
+                    conn.update(worksheet="Pedidos", data=df_p)
+                    df_f = df_f[df_f['ID'].astype(str) != id_actual]
+                    conn.update(worksheet="Facturas", data=df_f)
                     st.cache_data.clear(); st.rerun()
+
             pdf_b = crear_pdf(id_actual, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'])
-            st.download_button("PDF 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_actual}")
+            st.download_button("DESCARGAR PDF 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_actual}")
         st.divider()
 
 # --- 7. VISTA: NUEVO TRABAJO ---
 elif st.session_state.seccion == "NUEVO TRABAJO":
     st.markdown('<p class="titulo-seccion">Nuevo Trabajo</p>', unsafe_allow_html=True)
     c_nom = st.text_input("Nombre Cliente")
-    p_nom = st.text_input("Pieza")
+    p_nom = st.text_input("Nombre de la Pieza")
     ca, cb = st.columns(2)
-    gr = ca.number_input("Gramos", min_value=0.0); hr = cb.number_input("Horas", min_value=0.0)
+    gr = ca.number_input("Gramos totales", min_value=0.0)
+    hr = cb.number_input("Horas totales", min_value=0.0)
     mgn = st.select_slider("Margen %", options=[0, 50, 100, 200], value=100)
     total = ((0.024 * gr) + (hr * 1.0)) * (1 + mgn/100)
-    st.markdown(f"### TOTAL: {total:.2f} €"); nts = st.text_area("Notas")
-    img_f = st.file_uploader("Subir Imagen", type=['jpg', 'jpeg', 'png'])
-    if st.button("GUARDAR"):
+    st.markdown(f"### TOTAL: {total:.2f} €")
+    nts = st.text_area("Notas")
+    img_f = st.file_uploader("Foto Referencia", type=['jpg', 'jpeg', 'png'])
+    
+    if st.button("GUARDAR TRABAJO"):
         if c_nom and p_nom:
-            img_64 = procesar_foto(img_f); id_u = datetime.now().strftime("%y%m%d%H%M%S")
-            row = pd.DataFrame([{"ID": id_u, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts, "Imagen": img_64}])
+            img_64 = procesar_foto(img_f)
+            id_u = datetime.now().strftime("%y%m%d%H%M%S")
+            row = pd.DataFrame([{
+                "ID": id_u, "Fecha": datetime.now().strftime("%d/%m/%Y"), 
+                "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", 
+                "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts, "Imagen": img_64
+            }])
             conn.update(worksheet="Pedidos", data=pd.concat([df_p, row], ignore_index=True))
             conn.update(worksheet="Facturas", data=pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True))
             st.cache_data.clear(); st.success("¡Guardado!"); st.rerun()
 
-# --- 8. VISTA: FACTURAS ---
+# --- 8. VISTA: FACTURAS (CON BUSCADOR) ---
 elif st.session_state.seccion == "FACTURAS":
-    st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
     busqueda_f = st.text_input("🔍 Buscar en historial...", placeholder="Nombre o pieza...").lower()
     items_f = df_f.iloc[::-1]
     if busqueda_f:
-        items_f = items_f[items_f['Cliente'].str.lower().str.contains(busqueda_f) | items_f['Pieza'].str.lower().str.contains(busqueda_f)]
-    for i, r in items_f.iterrows():
-        with st.container():
-            st.markdown(f'<div class="card-container"><p class="card-fecha">{r["Fecha"]} | ID: {r["ID"]}</p><p class="card-nombre">{r["Cliente"]}</p><p class="card-info">{r["Pieza"]} - <b>{r["Precio"]} €</b></p></div>', unsafe_allow_html=True)
-            if r['Imagen'] and len(str(r['Imagen'])) > 100: st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=100)
-            pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'])
-            st.download_button("DESCARGAR 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"fpdf_{r['ID']}")
-            if st.button("BORRAR 🗑️", key=f"fdel_{r['ID']}"):
-                conn.update(worksheet="Facturas", data=df_f[df_f['ID'].astype(str) != str(r['ID'])]); st.cache_data.clear(); st.rerun()
-            st.divider()
+        items_f = items_f[items_f['Cliente'].str.lower().str.contains(busqueda_f) | 
+                          items_f['Pieza'].str.lower().str.contains(busqueda_f)]
+    
+    if items_f.empty:
+        st.info("No hay facturas registradas.")
+    else:
+        for i, r in items_f.iterrows():
+            with st.container():
+                st.markdown(f"""
+                    <div class="card-container">
+                        <p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p>
+                        <p class="card-nombre">{r['Cliente']}</p>
+                        <p class="card-info">{r['Pieza']} - <b>{r['Precio']} €</b></p>
+                    </div>
+                """, unsafe_allow_html=True)
+                if r['Imagen'] and len(str(r['Imagen'])) > 100:
+                    st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=100)
+                
+                pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'])
+                st.download_button("DESCARGAR 📩", data=pdf_b, file_name=f"Factura_{r['Cliente']}.pdf", key=f"fpdf_{r['ID']}")
+                
+                if st.button("BORRAR FACTURA 🗑️", key=f"fdel_{r['ID']}"):
+                    df_f_upd = df_f[df_f['ID'].astype(str) != str(r['ID'])]
+                    conn.update(worksheet="Facturas", data=df_f_upd)
+                    st.cache_data.clear(); st.rerun()
+                st.divider()
