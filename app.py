@@ -3,11 +3,26 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 from fpdf import FPDF
+from PIL import Image # IMPORTACIÓN ADICIONAL NECESARIA PARA CARGAR LA IMAGEN
 
-# 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="Xevytron 3D", layout="centered", initial_sidebar_state="collapsed")
+# 1. CONFIGURACIÓN DE PÁGINA (AQUÍ CARGAMOS Y ESTABLECEMOS TU LOGOTIPO COMO ICONO)
+try:
+    # Intenta cargar la imagen de tu logotipo
+    # Asegúrate de que el archivo 'image_7.png' esté en el mismo directorio que este script.
+    logo_image = Image.open("image_7.png")
+except FileNotFoundError:
+    # Si no se encuentra el archivo, muestra un error y usa un emoji como respaldo
+    st.error("Error: No se encontró el archivo de imagen 'image_7.png'. Asegúrate de que el archivo esté en el mismo directorio que este script.")
+    logo_image = "🛠️" # Usar el emoji de herramientas como respaldo
 
-# --- ESTILOS CSS (DISEÑO PREMIUM ORIGINAL) ---
+st.set_page_config(
+    page_title="Xevytron 3D", 
+    page_icon=logo_image, # <--- Aquí usamos el objeto PIL.Image cargado
+    layout="centered", 
+    initial_sidebar_state="collapsed"
+)
+
+# --- ESTILOS CSS (DISEÑO PREMIUM ORIGINAL, BOTONES OSCUROS Y TARJETAS BLANCAS) ---
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden;}
@@ -18,14 +33,14 @@ st.markdown("""
         
         .titulo-seccion { font-size: 22px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 20px; }
         
-        /* BOTONES DE NAVEGACIÓN Y ACCIONES: Gris Carbón Oscuro */
+        /* BOTONES DE NAVEGACIÓN Y ACCIONES: Gris Carbón Oscuro para que resalte el texto blanco */
         .stButton button { 
             width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; 
             text-transform: uppercase; border: 1px solid #212529; 
             background-color: #343a40 !important; color: #ffffff !important;
         }
 
-        /* TARJETAS: Siempre blancas */
+        /* TARJETAS: Se mantienen blancas */
         .card-container { 
             background-color: #ffffff !important; 
             border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; 
@@ -33,32 +48,39 @@ st.markdown("""
             margin-bottom: 5px;
         }
 
-        /* TEXTOS TRABAJOS */
         .trabajo-fecha { font-size: 10px; color: #999; text-transform: uppercase; margin: 0; }
         .trabajo-cliente { font-size: 21px; font-weight: 800; color: #111; text-transform: uppercase; margin: 0; line-height: 1.1; }
         .trabajo-pieza { font-size: 16px; font-weight: 500; color: #555; margin: 0; }
         .trabajo-precio { font-size: 18px; color: #6f42c1; font-weight: bold; margin-top: 5px; }
 
-        /* TEXTOS FACTURAS */
         .factura-meta { font-size: 11px; color: #777; text-transform: uppercase; margin: 0; }
         .factura-cliente { font-size: 18px; font-weight: bold; color: #111; margin: 0; }
         .factura-detalle { font-size: 16px; color: #6f42c1; font-weight: bold; margin: 0; }
         
-        /* Iconos PDF y Engranaje */
+        /* Icono PDF y Engranaje: Fondo Gris Carbón Oscuro */
         [data-testid="stDownloadButton"] button { 
             height: 2.8rem; width: 100%; border-radius: 8px; 
             background-color: #343a40 !important; border: 1px solid #212529 !important;
             color: #ffffff !important;
         }
-        [data-testid="stDownloadButton"] button p { color: white !important; font-weight: bold; }
+        
+        /* Ajuste específico para que el texto del botón de descarga sea blanco */
+        [data-testid="stDownloadButton"] button p {
+            color: white !important;
+        }
 
         .stExpander { border: none !important; }
         .stExpander > details > summary { 
             background-color: #343a40 !important; border-radius: 8px; 
             border: 1px solid #212529 !important; height: 2.8rem; 
             display: flex; align-items: center; justify-content: center;
+            color: white !important;
         }
-        .stExpander > details > summary svg { fill: white !important; }
+        
+        /* Color de la flechita del expander en blanco */
+        .stExpander > details > summary svg {
+            fill: white !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -102,7 +124,7 @@ def crear_factura_pdf(id_fac, fecha, cliente, pieza, gramos, horas, total, notas
     pdf.cell(200, 10, txt=f"TOTAL: {total:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
-# 4. NAVEGACIÓN (VUELVE ARRIBA)
+# 4. NAVEGACIÓN
 if 'seccion' not in st.session_state:
     st.session_state.seccion = "TRABAJOS"
 
@@ -112,7 +134,7 @@ if nav2.button("NUEVO"): st.session_state.seccion = "NUEVO TRABAJO"; st.rerun()
 if nav3.button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# 5. VISTA: TRABAJOS
+# 5. VISTA: TRABAJOS (CON SINCRONIZACIÓN Y CREACIÓN AUTOMÁTICA)
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     filtro = st.pills("Estado:", ESTADOS, default="Pendiente")
