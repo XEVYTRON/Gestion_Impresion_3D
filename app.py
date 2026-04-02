@@ -21,31 +21,26 @@ st.markdown("""
             margin-bottom: 20px; text-align: center; text-transform: uppercase;
         }
         
-        /* Estilo de los botones de navegación superiores */
         .stButton button {
             width: 100%; height: 3rem; border-radius: 8px; font-size: 14px;
             font-weight: 600; text-transform: uppercase; border: 1px solid #ddd;
         }
 
-        /* FORMATO DE TARJETA */
         .card-container {
             background-color: #fff; border-radius: 10px; padding: 12px;
             border: 1px solid #e0e0e0; border-left: 5px solid #6f42c1;
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         }
 
-        /* TEXTOS DE TRABAJOS */
         .trabajo-fecha { font-size: 10px; color: #999; text-transform: uppercase; margin: 0; }
         .trabajo-cliente { font-size: 19px; font-weight: 800; color: #111; text-transform: uppercase; margin: 0; line-height: 1.1; }
         .trabajo-pieza { font-size: 15px; font-weight: 500; color: #555; margin: 0; }
         .trabajo-precio { font-size: 17px; color: #6f42c1; font-weight: bold; margin-top: 3px; }
 
-        /* ESTILO FACTURAS */
         .factura-meta { font-size: 11px; color: #777; text-transform: uppercase; margin: 0; }
         .factura-cliente { font-size: 18px; font-weight: bold; color: #111; margin: 0; }
         .factura-detalle { font-size: 16px; color: #6f42c1; font-weight: bold; margin: 0; }
         
-        /* Ajuste para que el botón de descarga y el expander no tengan márgenes raros */
         [data-testid="stDownloadButton"] button {
             height: 2.8rem; width: 100%; border-radius: 8px; background-color: #f8f9fa;
         }
@@ -110,7 +105,7 @@ if nav_c2.button("NUEVO TRABAJO"): st.session_state.seccion = "NUEVO TRABAJO"; s
 if nav_c3.button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# 5. VISTA: TRABAJOS (Diseño con botones alineados)
+# 5. VISTA: TRABAJOS (Con Sincronización de Edición)
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     filtro = st.pills("Estado:", ESTADOS, default="Pendiente", label_visibility="collapsed")
@@ -121,7 +116,6 @@ if st.session_state.seccion == "TRABAJOS":
     else:
         for i, r in items.iterrows():
             with st.container():
-                # TRES COLUMNAS: Datos, Botón PDF y Desplegable Editar
                 col_datos, col_pdf, col_edit = st.columns([2.2, 0.6, 1.2])
                 
                 with col_datos:
@@ -140,23 +134,36 @@ if st.session_state.seccion == "TRABAJOS":
                     st.download_button("📄", data=pdf_b, file_name=f"Factura_{r['Cliente']}.pdf", key=f"pdf_{r['ID']}")
                 
                 with col_edit:
-                    # El desplegable ahora está justo al lado del PDF
                     with st.expander("⚙️"):
                         with st.form(f"edit_{r['ID']}"):
                             e_cli = st.text_input("Cliente", value=r['Cliente'])
                             e_pie = st.text_input("Pieza", value=r['Pieza'])
                             e_pre = st.number_input("Precio (€)", value=float(r['Precio']))
                             e_not = st.text_area("Notas", value=r['Notas'] if 'Notas' in r and pd.notna(r['Notas']) else "")
+                            
                             if st.form_submit_button("Ok"):
+                                # 1. Actualizar Pedidos
                                 df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [e_cli, e_pie, e_pre, e_not]
                                 conn.update(worksheet="Pedidos", data=df_pedidos)
-                                st.cache_data.clear(); st.rerun()
-                        if st.button("🗑️", key=f"del_{r['ID']}", type="primary", help="Eliminar"):
+                                
+                                # 2. Sincronizar automáticamente con Facturas usando el ID
+                                if not df_facturas.empty:
+                                    df_facturas.loc[df_facturas['ID'] == r['ID'], ['Cliente', 'Pieza', 'Precio', 'Notas']] = [e_cli, e_pie, e_pre, e_not]
+                                    conn.update(worksheet="Facturas", data=df_facturas)
+                                
+                                st.cache_data.clear()
+                                st.success("Sincronizado")
+                                st.rerun()
+
+                        if st.button("🗑️", key=f"del_{r['ID']}", type="primary"):
+                            # Borrar de Pedidos
                             df_pedidos = df_pedidos.drop(i)
                             conn.update(worksheet="Pedidos", data=df_pedidos)
+                            # (Opcional) Si quieres que también se borre la factura al borrar el trabajo, descomenta abajo:
+                            # df_facturas = df_facturas[df_facturas['ID'] != r['ID']]
+                            # conn.update(worksheet="Facturas", data=df_facturas)
                             st.cache_data.clear(); st.rerun()
                 
-                # Deslizador de estado (ocupa todo el ancho debajo)
                 nuevo_e = st.select_slider("Estado:", options=ESTADOS, value=filtro, key=f"sl_{r['ID']}", label_visibility="collapsed")
                 if nuevo_e != filtro:
                     df_pedidos.loc[i, "Estado"] = nuevo_e
@@ -175,7 +182,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
     margen = st.select_slider("Margen de beneficio %", options=[0, 25, 50, 75, 100, 150, 200, 300], value=100)
     precio_calc = ((24/1000 * gramos) + (horas * 1.0)) * (1 + margen/100)
     st.markdown(f"### PRECIO TOTAL: {precio_calc:.2f} €")
-    notas = st.text_area("Notas", placeholder="Especificaciones...")
+    notas = st.text_area("Notas")
     if st.button("GUARDAR TRABAJO Y FACTURA"):
         if cliente and pieza:
             f_hoy = datetime.now().strftime("%d/%m/%Y")
@@ -184,7 +191,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
             nueva_f = pd.DataFrame([{"ID": id_n, "Fecha": f_hoy, "Cliente": cliente, "Pieza": pieza, "Precio": precio_calc, "Gramos": gramos, "Horas": horas, "Notas": notas}])
             conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, nuevo_p], ignore_index=True))
             conn.update(worksheet="Facturas", data=pd.concat([df_facturas, nueva_f], ignore_index=True))
-            st.cache_data.clear(); st.success("¡Guardado!"); st.rerun()
+            st.cache_data.clear(); st.rerun()
         else: st.warning("Rellena Cliente y Pieza.")
 
 # 7. VISTA: FACTURAS
