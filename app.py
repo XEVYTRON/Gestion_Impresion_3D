@@ -220,4 +220,42 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
     p_nom = st.text_input("Pieza")
     ca, cb = st.columns(2)
     gr = ca.number_input("Gramos", min_value=0.0, step=1.0)
-    hr =
+    hr = cb.number_input("Horas", min_value=0.0, step=0.5)
+    mgn = st.select_slider("Margen %", options=[0, 25, 50, 75, 100, 150, 200, 300], value=100)
+    total = ((24/1000 * gr) + (hr * 1.0)) * (1 + mgn/100)
+    st.markdown(f"### TOTAL: {total:.2f} €")
+    nts = st.text_area("Notas")
+    if st.button("GUARDAR TRABAJO"):
+        if c_nom and p_nom:
+            f_h = datetime.now().strftime("%d/%m/%Y")
+            id_u = datetime.now().strftime("%y%m%d%H%M%S")
+            row = pd.DataFrame([{"ID": id_u, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
+            conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, row], ignore_index=True))
+            conn.update(worksheet="Facturas", data=pd.concat([df_facturas, row.drop(columns=['Estado'])], ignore_index=True))
+            st.cache_data.clear(); st.success("¡Guardado!"); st.rerun()
+
+# 8. VISTA: FACTURAS
+elif st.session_state.seccion == "FACTURAS":
+    st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
+    if df_facturas.empty:
+        st.info("No hay facturas registradas.")
+    else:
+        for i, r in df_facturas.iloc[::-1].iterrows():
+            with st.container():
+                st.markdown(f"""
+                    <div class="card-container">
+                        <p class="factura-meta">{r['Fecha']} | ID: {r['ID']}</p>
+                        <p class="factura-cliente">{r['Cliente']}</p>
+                        <p class="factura-detalle">{r['Pieza']} - {r['Precio']} €</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                c_f1, c_f2 = st.columns(2)
+                with c_f1:
+                    pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), r['Notas'])
+                    st.download_button("📩 PDF", data=pdf_bytes, file_name=f"F_{r['Cliente']}.pdf", key=f"f_dl_{i}")
+                with c_f2:
+                    if st.button("🗑️", key=f"f_del_{i}"):
+                        df_facturas = df_facturas.drop(i)
+                        conn.update(worksheet="Facturas", data=df_facturas)
+                        st.cache_data.clear(); st.rerun()
+                st.divider()
