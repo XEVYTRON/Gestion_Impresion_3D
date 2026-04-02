@@ -166,4 +166,51 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
     margen = st.select_slider("Margen de beneficio %", options=[0, 25, 50, 75, 100, 150, 200, 300], value=100)
     
     precio_calculado = ((24/1000 * gramos) + (horas * 1.0)) * (1 + margen/100)
-    st.markdown(f"### PRECIO TOTAL: {precio_calculado
+    st.markdown(f"### PRECIO TOTAL: {precio_calculado:.2f} €")
+    
+    notas = st.text_area("Notas (Colores, especificaciones, etc.)", placeholder="Ej: Color Negro Mate, relleno al 20%...")
+
+    if st.button("GUARDAR TRABAJO Y FACTURA"):
+        if cliente and pieza:
+            f_hoy = datetime.now().strftime("%d/%m/%Y")
+            id_n = int(df_pedidos["ID"].max() + 1 if not df_pedidos.empty else 1)
+            
+            nuevo_p = pd.DataFrame([{"ID": id_n, "Fecha": f_hoy, "Cliente": cliente, "Pieza": pieza, "Estado": "Pendiente", "Precio": precio_calculado, "Gramos": gramos, "Horas": horas, "Notas": notas}])
+            nueva_f = pd.DataFrame([{"ID": id_n, "Fecha": f_hoy, "Cliente": cliente, "Pieza": pieza, "Precio": precio_calculado, "Gramos": gramos, "Horas": horas, "Notas": notas}])
+            
+            conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, nuevo_p], ignore_index=True))
+            conn.update(worksheet="Facturas", data=pd.concat([df_facturas, nueva_f], ignore_index=True))
+            st.cache_data.clear()
+            st.success("¡Trabajo y Factura guardados con éxito!")
+            st.rerun()
+        else:
+            st.warning("Por favor, rellena al menos el Cliente y la Pieza.")
+
+# 7. VISTA: FACTURAS (Formato Clásico Intacto)
+elif st.session_state.seccion == "FACTURAS":
+    st.markdown('<p class="titulo-seccion">Registro de Facturas</p>', unsafe_allow_html=True)
+    if df_facturas.empty:
+        st.info("No hay facturas registradas.")
+    else:
+        df_inv = df_facturas.iloc[::-1]
+        for i, r in df_inv.iterrows():
+            with st.container():
+                st.markdown(f"""
+                <div class="card-container">
+                    <p class="factura-meta">{r['Fecha']} | ID: {r['ID']}</p>
+                    <p class="factura-cliente">{r['Cliente']}</p>
+                    <p class="factura-detalle">{r['Pieza']} - {r['Precio']} €</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                c_f1, c_f2 = st.columns(2)
+                with c_f1:
+                    notas_f = r['Notas'] if 'Notas' in r and pd.notna(r['Notas']) else ""
+                    pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), notas_f)
+                    st.download_button("📩 PDF", data=pdf_bytes, file_name=f"Factura_{r['Cliente']}.pdf", key=f"dl_f_{i}")
+                with c_f2:
+                    if st.button("🗑️ Borrar", key=f"del_f_{i}"):
+                        df_facturas = df_facturas.drop(i)
+                        conn.update(worksheet="Facturas", data=df_facturas)
+                        st.cache_data.clear(); st.rerun()
+                st.divider()
