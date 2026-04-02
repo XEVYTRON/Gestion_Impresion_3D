@@ -7,7 +7,7 @@ from PIL import Image
 import base64
 from io import BytesIO
 
-# 1. PROCESAMIENTO ULTRA-LIGERO DE IMÁGENES
+# 1. PROCESAMIENTO DE IMÁGENES
 def get_base64_of_bin_file(img_path):
     try:
         img = Image.open(img_path)
@@ -21,10 +21,9 @@ def procesar_imagen_mini(uploaded_file):
         try:
             img = Image.open(uploaded_file)
             img = img.convert("RGB")
-            # Reducimos a 200px para que el móvil no sufra
             img.thumbnail((200, 200))
             buffer = BytesIO()
-            img.save(buffer, format="JPEG", quality=50) # Calidad baja para ahorrar memoria
+            img.save(buffer, format="JPEG", quality=50)
             return base64.b64encode(buffer.getvalue()).decode()
         except: return ""
     return ""
@@ -43,7 +42,7 @@ st.set_page_config(page_title="Xevytron 3D", page_icon=logo_image, layout="cente
 if logo_base64:
     st.markdown(f'<head><link rel="apple-touch-icon" href="data:image/png;base64,{logo_base64}"></head>', unsafe_allow_html=True)
 
-# --- ESTILOS CSS (LIMPIOS PARA MÓVIL) ---
+# --- ESTILOS CSS ---
 st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] { overflow-x: hidden !important; width: 100vw; }
@@ -54,8 +53,6 @@ st.markdown("""
             background-color: #ffffff !important; border-radius: 10px; padding: 12px; border: 1px solid #e0e0e0; 
             border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 10px;
         }
-        .trabajo-cliente { font-size: 18px; font-weight: 800; color: #111; text-transform: uppercase; margin: 0; }
-        .trabajo-info { font-size: 14px; color: #555; margin: 0; }
         [data-testid="stDownloadButton"] button, .stExpander > details > summary { 
             height: 3rem; width: 100%; border-radius: 8px; background-color: #343a40 !important; color: white !important; margin-bottom: 8px;
         }
@@ -82,7 +79,7 @@ if df_p is None: st.error("Error de conexión"); st.stop()
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 
-# 4. LÓGICA DE PDF (MEJORADA)
+# 4. LÓGICA DE PDF
 def crear_pdf(id_f, fecha, cli, pie, tot, nts="", img_b64=""):
     pdf = FPDF()
     pdf.add_page()
@@ -102,9 +99,7 @@ def crear_pdf(id_f, fecha, cli, pie, tot, nts="", img_b64=""):
         try:
             img_raw = base64.b64decode(img_b64)
             img_io = BytesIO(img_raw)
-            pdf.ln(5)
-            pdf.image(img_io, w=50) # Imagen más pequeña en PDF para evitar errores
-            pdf.ln(5)
+            pdf.ln(5); pdf.image(img_io, w=50); pdf.ln(5)
         except: pass
 
     pdf.ln(5); pdf.set_font("Arial", 'B', 14)
@@ -127,23 +122,13 @@ if st.session_state.seccion == "TRABAJOS":
     
     for i, r in items.iterrows():
         ver = st.session_state.v_menu.get(r['ID'], 0)
+        id_actual = str(r['ID'])
         with st.container():
-            # CARD CON TRY/EXCEPT PARA SEGURIDAD
-            try:
-                st.markdown(f"""
-                    <div class="card-container">
-                        <p class="trabajo-fecha">{r['Fecha']}</p>
-                        <p class="trabajo-cliente">{r['Cliente']}</p>
-                        <p class="trabajo-info">{r['Pieza']} | <b>{r['Precio']} €</b></p>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                if r['Imagen'] and len(str(r['Imagen'])) > 100:
-                    st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=120)
-            except:
-                st.warning("Error al cargar datos de este trabajo.")
+            st.markdown(f'<div class="card-container"><p style="font-size:10px; color:#999; margin:0;">{r["Fecha"]}</p><p style="font-size:18px; font-weight:800; color:#111; margin:0;">{r["Cliente"]}</p><p style="font-size:14px; color:#555; margin:0;">{r["Pieza"]} | <b>{r["Precio"]} €</b></p></div>', unsafe_allow_html=True)
+            
+            if r['Imagen'] and len(str(r['Imagen'])) > 100:
+                st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=120)
 
-            # CONTROLES
             nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{r['ID']}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
                 df_p.loc[i, "Estado"] = nuevo_e
@@ -156,14 +141,32 @@ if st.session_state.seccion == "TRABAJOS":
                     u_pre = st.number_input("Precio", value=float(r['Precio']))
                     u_not = st.text_area("Notas", value=r['Notas'])
                     u_img = st.file_uploader("Cambiar Imagen", type=['jpg', 'jpeg', 'png'])
+                    
                     if st.form_submit_button("Ok"):
                         img_64 = procesar_imagen_mini(u_img) if u_img else r['Imagen']
+                        # Actualizar Pedidos
                         df_p.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
                         conn.update(worksheet="Pedidos", data=df_p)
+                        
+                        # SINCRONIZACIÓN CON FACTURAS
+                        df_f['ID_temp'] = df_f['ID'].astype(str)
+                        idx_f = df_f[df_f['ID_temp'] == id_actual].index
+                        if not idx_f.empty:
+                            df_f.loc[idx_f, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
+                            conn.update(worksheet="Facturas", data=df_f.drop(columns=['ID_temp']))
+                        
                         st.session_state.v_menu[r['ID']] = ver + 1
                         st.cache_data.clear(); st.rerun()
+
                 if st.button("🗑️ ELIMINAR", key=f"d_{r['ID']}"):
-                    df_p = df_p.drop(i); conn.update(worksheet="Pedidos", data=df_p); st.cache_data.clear(); st.rerun()
+                    # Borrar de Pedidos
+                    df_p = df_p.drop(i)
+                    conn.update(worksheet="Pedidos", data=df_p)
+                    # Borrar de Facturas también
+                    df_f['ID_temp'] = df_f['ID'].astype(str)
+                    df_f = df_f[df_f['ID_temp'] != id_actual].drop(columns=['ID_temp'])
+                    conn.update(worksheet="Facturas", data=df_f)
+                    st.cache_data.clear(); st.rerun()
 
             pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'])
             st.download_button("PDF 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
@@ -195,11 +198,15 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
 # 8. VISTA: FACTURAS
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
-    for i, r in df_f.iloc[::-1].iterrows():
-        with st.container():
-            st.markdown(f'<div class="card-container"><p class="trabajo-fecha">{r["Fecha"]}</p><p class="trabajo-cliente">{r["Cliente"]}</p><p class="trabajo-info">{r["Pieza"]} - {r["Precio"]} €</p></div>', unsafe_allow_html=True)
-            pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'])
-            st.download_button("📩 PDF", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"fd_{i}")
-            if st.button("🗑️", key=f"fb_{i}"):
-                df_f = df_f.drop(i); conn.update(worksheet="Facturas", data=df_f); st.cache_data.clear(); st.rerun()
-            st.divider()
+    if df_f.empty: st.info("No hay facturas")
+    else:
+        for i, r in df_f.iloc[::-1].iterrows():
+            with st.container():
+                st.markdown(f'<div class="card-container"><p style="font-size:10px; color:#999; margin:0;">{r["Fecha"]} | ID: {r["ID"]}</p><p style="font-size:16px; font-weight:800; color:#111; margin:0;">{r["Cliente"]}</p><p style="font-size:14px; color:#6f42c1; font-weight:bold; margin:0;">{r["Pieza"]} - {r["Precio"]} €</p></div>', unsafe_allow_html=True)
+                if r['Imagen'] and len(str(r['Imagen'])) > 100:
+                    st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=100)
+                pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'])
+                st.download_button("📩 PDF", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"fd_{i}")
+                if st.button("🗑️", key=f"fb_{i}"):
+                    df_f = df_f.drop(i); conn.update(worksheet="Facturas", data=df_f); st.cache_data.clear(); st.rerun()
+                st.divider()
