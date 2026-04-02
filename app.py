@@ -78,6 +78,9 @@ st.markdown("""
         [data-testid="stDownloadButton"] button p { color: white !important; font-weight: bold; }
         .stExpander > details > summary svg { fill: white !important; }
         .stExpander { border: none !important; }
+        
+        /* Ajuste para que los botones de abajo no estén pegados al desplegable */
+        .separador-botones { margin-top: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -134,26 +137,35 @@ st.divider()
 # 6. VISTA: TRABAJOS
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
-    filtro = st.pills("Estado:", ESTADOS, default="Pendiente")
+    filtro = st.pills("Filtro:", ESTADOS, default="Pendiente")
     items = df_pedidos[df_pedidos["Estado"] == filtro]
     
     for i, r in items.iterrows():
         with st.container():
-            col_dat, col_pdf, col_ed = st.columns([2.2, 0.7, 1.1])
-            with col_dat:
-                st.markdown(f"""
-                    <div class="card-container">
-                        <p class="trabajo-fecha">{r['Fecha']}</p>
-                        <p class="trabajo-cliente">{r['Cliente']}</p>
-                        <p class="trabajo-pieza">{r['Pieza']}</p>
-                        <p class="trabajo-precio">{r['Precio']} €</p>
-                    </div>
-                """, unsafe_allow_html=True)
-            with col_pdf:
+            # PARTE 1: La tarjeta blanca con la info
+            st.markdown(f"""
+                <div class="card-container">
+                    <p class="trabajo-fecha">{r['Fecha']}</p>
+                    <p class="trabajo-cliente">{r['Cliente']}</p>
+                    <p class="trabajo-pieza">{r['Pieza']}</p>
+                    <p class="trabajo-precio">{r['Precio']} €</p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # PARTE 2: El desplegable de estado (Ocupa todo el ancho)
+            nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"sel_{r['ID']}", label_visibility="collapsed")
+            if nuevo_e != r['Estado']:
+                df_pedidos.loc[i, "Estado"] = nuevo_e
+                conn.update(worksheet="Pedidos", data=df_pedidos)
+                st.cache_data.clear(); st.rerun()
+            
+            # PARTE 3: Los botones de acción (PDF y Ajustes) abajo
+            c_pdf, c_ed = st.columns(2)
+            with c_pdf:
                 n_v = r['Notas'] if pd.notna(r['Notas']) else ""
-                pdf = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), n_v)
-                st.download_button("PDF", data=pdf, file_name=f"Fac_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
-            with col_ed:
+                pdf_b = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), n_v)
+                st.download_button("PDF", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
+            with c_ed:
                 with st.expander("⚙️"):
                     with st.form(f"f_ed_{r['ID']}"):
                         u_cli = st.text_input("Cliente", value=r['Cliente'])
@@ -173,16 +185,10 @@ if st.session_state.seccion == "TRABAJOS":
                                 nueva = pd.DataFrame([{"ID": r['ID'], "Fecha": r['Fecha'], "Cliente": u_cli, "Pieza": u_pie, "Precio": u_pre, "Gramos": r['Gramos'], "Horas": r['Horas'], "Notas": u_not}])
                                 conn.update(worksheet="Facturas", data=pd.concat([df_facturas.drop(columns=['ID_s']), nueva], ignore_index=True))
                             st.cache_data.clear(); st.rerun()
-                    if st.button("🗑️", key=f"del_{r['ID']}", type="primary"):
+                    if st.button("🗑️ ELIMINAR", key=f"del_{r['ID']}", type="primary"):
                         df_pedidos = df_pedidos.drop(i)
                         conn.update(worksheet="Pedidos", data=df_pedidos)
                         st.cache_data.clear(); st.rerun()
-            
-            nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"sel_{r['ID']}", label_visibility="collapsed")
-            if nuevo_e != r['Estado']:
-                df_pedidos.loc[i, "Estado"] = nuevo_e
-                conn.update(worksheet="Pedidos", data=df_pedidos)
-                st.cache_data.clear(); st.rerun()
         st.divider()
 
 # 7. VISTA: NUEVO TRABAJO
@@ -204,7 +210,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
             row = pd.DataFrame([{"ID": id_u, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
             conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, row], ignore_index=True))
             conn.update(worksheet="Facturas", data=pd.concat([df_facturas, row.drop(columns=['Estado'])], ignore_index=True))
-            st.cache_data.clear(); st.success("Guardado"); st.rerun()
+            st.cache_data.clear(); st.success("¡Guardado!"); st.rerun()
 
 # 8. VISTA: FACTURAS
 elif st.session_state.seccion == "FACTURAS":
