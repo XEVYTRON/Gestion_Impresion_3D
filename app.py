@@ -7,7 +7,7 @@ from fpdf import FPDF
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Xevytron 3D", layout="centered", initial_sidebar_state="collapsed")
 
-# --- ESTILOS CSS (DISEÑO SOLICITADO) ---
+# --- ESTILOS CSS (BOTONES OSCUROS Y TARJETAS BLANCAS) ---
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden;}
@@ -18,14 +18,14 @@ st.markdown("""
         
         .titulo-seccion { font-size: 22px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 20px; }
         
-        /* BOTONES Y MENÚS: Gris oscuro solicitado */
+        /* BOTONES DE NAVEGACIÓN: Gris Carbón Oscuro para que resalte el texto blanco */
         .stButton button { 
             width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; 
-            text-transform: uppercase; border: 1px solid #ced4da; 
-            background-color: #e9ecef !important; color: #333 !important;
+            text-transform: uppercase; border: 1px solid #212529; 
+            background-color: #343a40 !important; color: #ffffff !important;
         }
 
-        /* TARJETAS: Siempre blancas */
+        /* TARJETAS: Se mantienen blancas */
         .card-container { 
             background-color: #ffffff !important; 
             border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; 
@@ -33,28 +33,38 @@ st.markdown("""
             margin-bottom: 5px;
         }
 
-        /* ESTILO TRABAJOS */
         .trabajo-fecha { font-size: 10px; color: #999; text-transform: uppercase; margin: 0; }
         .trabajo-cliente { font-size: 21px; font-weight: 800; color: #111; text-transform: uppercase; margin: 0; line-height: 1.1; }
         .trabajo-pieza { font-size: 16px; font-weight: 500; color: #555; margin: 0; }
         .trabajo-precio { font-size: 18px; color: #6f42c1; font-weight: bold; margin-top: 5px; }
 
-        /* ESTILO FACTURAS */
         .factura-meta { font-size: 11px; color: #777; text-transform: uppercase; margin: 0; }
         .factura-cliente { font-size: 18px; font-weight: bold; color: #111; margin: 0; }
         .factura-detalle { font-size: 16px; color: #6f42c1; font-weight: bold; margin: 0; }
         
-        /* Icono PDF y Engranaje: Fondo oscuro */
+        /* Icono PDF y Engranaje: Fondo Gris Carbón Oscuro */
         [data-testid="stDownloadButton"] button { 
             height: 2.8rem; width: 100%; border-radius: 8px; 
-            background-color: #e9ecef !important; border: 1px solid #ced4da !important;
+            background-color: #343a40 !important; border: 1px solid #212529 !important;
+            color: #ffffff !important;
         }
         
+        /* Ajuste específico para que el texto del botón de descarga sea blanco */
+        [data-testid="stDownloadButton"] button p {
+            color: white !important;
+        }
+
         .stExpander { border: none !important; }
         .stExpander > details > summary { 
-            background-color: #e9ecef !important; border-radius: 8px; 
-            border: 1px solid #ced4da !important; height: 2.8rem; 
+            background-color: #343a40 !important; border-radius: 8px; 
+            border: 1px solid #212529 !important; height: 2.8rem; 
             display: flex; align-items: center; justify-content: center;
+            color: white !important;
+        }
+        
+        /* Color de la flechita del expander en blanco */
+        .stExpander > details > summary svg {
+            fill: white !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -109,7 +119,7 @@ if nav2.button("NUEVO TRABAJO"): st.session_state.seccion = "NUEVO TRABAJO"; st.
 if nav3.button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# 5. VISTA: TRABAJOS (CON RECREACIÓN DE FACTURA SI NO EXISTE)
+# 5. VISTA: TRABAJOS (CON SINCRONIZACIÓN Y CREACIÓN AUTOMÁTICA)
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     filtro = st.pills("Estado:", ESTADOS, default="Pendiente")
@@ -130,7 +140,7 @@ if st.session_state.seccion == "TRABAJOS":
             with col_pdf:
                 n_v = r['Notas'] if pd.notna(r['Notas']) else ""
                 pdf = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), n_v)
-                st.download_button("📄", data=pdf, file_name=f"Fac_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
+                st.download_button("PDF", data=pdf, file_name=f"Fac_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
             with col_ed:
                 with st.expander("⚙️"):
                     with st.form(f"f_ed_{r['ID']}"):
@@ -139,22 +149,19 @@ if st.session_state.seccion == "TRABAJOS":
                         u_pre = st.number_input("Precio (€)", value=float(r['Precio']))
                         u_not = st.text_area("Notas", value=r['Notas'] if pd.notna(r['Notas']) else "")
                         if st.form_submit_button("Ok"):
-                            # 1. Actualizar Pedidos
                             df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
                             conn.update(worksheet="Pedidos", data=df_pedidos)
                             
-                            # 2. Sincronizar o Recrear Factura
+                            # Sincronizar o Recrear Factura
                             id_buscado = str(r['ID'])
                             df_facturas['ID_str'] = df_facturas['ID'].astype(str)
                             idx = df_facturas[df_facturas['ID_str'] == id_buscado].index
                             
                             if not idx.empty:
-                                # Si existe, actualizamos
                                 df_facturas.loc[idx, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
                                 df_final_f = df_facturas.drop(columns=['ID_str'])
                                 conn.update(worksheet="Facturas", data=df_final_f)
                             else:
-                                # Si NO existe, la creamos de nuevo
                                 nueva_f = pd.DataFrame([{
                                     "ID": r['ID'], "Fecha": r['Fecha'], "Cliente": u_cli, 
                                     "Pieza": u_pie, "Precio": u_pre, "Gramos": r['Gramos'], 
@@ -163,7 +170,7 @@ if st.session_state.seccion == "TRABAJOS":
                                 df_final_f = pd.concat([df_facturas.drop(columns=['ID_str']), nueva_f], ignore_index=True)
                                 conn.update(worksheet="Facturas", data=df_final_f)
                             
-                            st.cache_data.clear(); st.success("¡Datos sincronizados!"); st.rerun()
+                            st.cache_data.clear(); st.success("¡Sincronizado!"); st.rerun()
                     
                     if st.button("🗑️", key=f"del_{r['ID']}", type="primary"):
                         df_pedidos = df_pedidos.drop(i)
@@ -186,9 +193,11 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
     gr = ca.number_input("Gramos", min_value=0.0, step=1.0)
     hr = cb.number_input("Horas", min_value=0.0, step=0.5)
     mgn = st.select_slider("Margen %", options=[0, 25, 50, 75, 100, 150, 200, 300], value=100)
+    
     total = ((24/1000 * gr) + (hr * 1.0)) * (1 + mgn/100)
     st.markdown(f"### TOTAL: {total:.2f} €")
     nts = st.text_area("Notas")
+    
     if st.button("GUARDAR TRABAJO"):
         if c_nom and p_nom:
             f_h = datetime.now().strftime("%d/%m/%Y")
@@ -218,7 +227,7 @@ elif st.session_state.seccion == "FACTURAS":
                 c_f1, c_f2 = st.columns(2)
                 with c_f1:
                     pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), r['Notas'])
-                    st.download_button("📩 PDF", data=pdf_bytes, file_name=f"F_{r['Cliente']}.pdf", key=f"f_dl_{i}")
+                    st.download_button("PDF", data=pdf_bytes, file_name=f"F_{r['Cliente']}.pdf", key=f"f_dl_{i}")
                 with c_f2:
                     if st.button("🗑️", key=f"f_del_{i}"):
                         df_facturas = df_facturas.drop(i)
