@@ -41,14 +41,20 @@ if logo_base64:
         </head>
     """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS (DISEÑO ESTABLE) ---
+# --- ESTILOS CSS (DISEÑO VERTICAL ANTI-SCROLL) ---
 st.markdown("""
     <style>
+        /* Bloqueo total de movimiento lateral */
+        html, body, [data-testid="stAppViewContainer"] {
+            overflow-x: hidden !important;
+            width: 100vw;
+            margin: 0; padding: 0;
+        }
+
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
         .stDeployButton {display:none;}
-        html, body, [class*="css"] { font-family: 'Segoe UI', sans-serif; }
         
         .titulo-seccion { font-size: 22px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 20px; }
         
@@ -62,28 +68,28 @@ st.markdown("""
         /* TARJETAS BLANCAS */
         .card-container { 
             background-color: #ffffff !important; 
-            border-radius: 10px; padding: 12px; border: 1px solid #e0e0e0; 
+            border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; 
             border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
-            width: 100%;
+            margin-bottom: 10px; width: 100%; box-sizing: border-box;
         }
 
         .trabajo-fecha { font-size: 10px; color: #999; text-transform: uppercase; margin: 0; }
-        .trabajo-cliente { font-size: 19px; font-weight: 800; color: #111; text-transform: uppercase; margin: 0; line-height: 1.1; }
-        .trabajo-pieza { font-size: 15px; font-weight: 500; color: #555; margin: 0; }
-        .trabajo-precio { font-size: 17px; color: #6f42c1; font-weight: bold; margin-top: 5px; }
+        .trabajo-cliente { font-size: 20px; font-weight: 800; color: #111; text-transform: uppercase; margin: 0; line-height: 1.1; }
+        .trabajo-pieza { font-size: 16px; font-weight: 500; color: #555; margin: 0; }
+        .trabajo-precio { font-size: 18px; color: #6f42c1; font-weight: bold; margin-top: 5px; }
 
-        /* BOTONES PDF Y AJUSTES */
+        /* BOTONES DE ACCIÓN VERTICALES */
         [data-testid="stDownloadButton"] button, .stExpander > details > summary { 
-            height: 2.8rem; width: 100%; border-radius: 8px; 
+            height: 3.2rem; width: 100%; border-radius: 8px; 
             background-color: #343a40 !important; border: 1px solid #212529 !important;
-            color: #ffffff !important;
-            display: flex; align-items: center; justify-content: center;
+            color: #ffffff !important; display: flex; align-items: center; justify-content: center;
+            margin-bottom: 8px;
         }
         [data-testid="stDownloadButton"] button p { color: white !important; font-weight: bold; }
         .stExpander > details > summary svg { fill: white !important; }
-        .stExpander { border: none !important; }
+        .stExpander { border: none !important; width: 100% !important; }
         
-        .stSelectbox { margin-top: 5px; }
+        .stSelectbox { margin-bottom: 10px; width: 100% !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -137,7 +143,7 @@ if nav2.button("NUEVO"): st.session_state.seccion = "NUEVO TRABAJO"; st.rerun()
 if nav3.button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# 6. VISTA: TRABAJOS
+# 6. VISTA: TRABAJOS (ORDEN VERTICAL SOLICITADO)
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     filtro = st.pills("Ver:", ESTADOS, default="Pendiente")
@@ -145,52 +151,52 @@ if st.session_state.seccion == "TRABAJOS":
     
     for i, r in items.iterrows():
         with st.container():
-            # FILA SUPERIOR: INFO | PDF | AJUSTES
-            col_dat, col_pdf, col_ed = st.columns([2.2, 0.7, 1.1])
-            with col_dat:
-                st.markdown(f"""
-                    <div class="card-container">
-                        <p class="trabajo-fecha">{r['Fecha']}</p>
-                        <p class="trabajo-cliente">{r['Cliente']}</p>
-                        <p class="trabajo-pieza">{r['Pieza']}</p>
-                        <p class="trabajo-precio">{r['Precio']} €</p>
-                    </div>
-                """, unsafe_allow_html=True)
-            with col_pdf:
-                n_v = r['Notas'] if pd.notna(r['Notas']) else ""
-                pdf_b = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), n_v)
-                st.download_button("PDF", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
-            with col_ed:
-                with st.expander("⚙️"):
-                    with st.form(f"f_ed_{r['ID']}"):
-                        u_cli = st.text_input("Cliente", value=r['Cliente'])
-                        u_pie = st.text_input("Pieza", value=r['Pieza'])
-                        u_pre = st.number_input("Precio (€)", value=float(r['Precio']))
-                        u_not = st.text_area("Notas", value=r['Notas'] if pd.notna(r['Notas']) else "")
-                        if st.form_submit_button("Ok"):
-                            df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
-                            conn.update(worksheet="Pedidos", data=df_pedidos)
-                            # Sincronización
-                            df_facturas['ID_s'] = df_facturas['ID'].astype(str)
-                            idx = df_facturas[df_facturas['ID_s'] == str(r['ID'])].index
-                            if not idx.empty:
-                                df_facturas.loc[idx, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
-                                conn.update(worksheet="Facturas", data=df_facturas.drop(columns=['ID_s']))
-                            else:
-                                nueva = pd.DataFrame([{"ID": r['ID'], "Fecha": r['Fecha'], "Cliente": u_cli, "Pieza": u_pie, "Precio": u_pre, "Gramos": r['Gramos'], "Horas": r['Horas'], "Notas": u_not}])
-                                conn.update(worksheet="Facturas", data=pd.concat([df_facturas.drop(columns=['ID_s']), nueva], ignore_index=True))
-                            st.cache_data.clear(); st.rerun()
-                    if st.button("🗑️ ELIMINAR", key=f"del_{r['ID']}", type="primary"):
-                        df_pedidos = df_pedidos.drop(i)
-                        conn.update(worksheet="Pedidos", data=df_pedidos)
-                        st.cache_data.clear(); st.rerun()
+            # 1. INFO CARD
+            st.markdown(f"""
+                <div class="card-container">
+                    <p class="trabajo-fecha">{r['Fecha']}</p>
+                    <p class="trabajo-cliente">{r['Cliente']}</p>
+                    <p class="trabajo-pieza">{r['Pieza']}</p>
+                    <p class="trabajo-precio">{r['Precio']} €</p>
+                </div>
+            """, unsafe_allow_html=True)
             
-            # FILA INFERIOR: ESTADO (Ancho completo)
-            nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"sel_{r['ID']}", label_visibility="collapsed")
+            # 2. DESPLEGABLE ESTADO (Primero)
+            nuevo_e = st.selectbox("Cambiar estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"sel_{r['ID']}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
                 df_pedidos.loc[i, "Estado"] = nuevo_e
                 conn.update(worksheet="Pedidos", data=df_pedidos)
                 st.cache_data.clear(); st.rerun()
+            
+            # 3. MODIFICAR TRABAJO (Segundo - Se cierra solo tras pulsar Ok)
+            with st.expander("MODIFICAR TRABAJO ⚙️"):
+                with st.form(f"f_ed_{r['ID']}"):
+                    u_cli = st.text_input("Cliente", value=r['Cliente'])
+                    u_pie = st.text_input("Pieza", value=r['Pieza'])
+                    u_pre = st.number_input("Precio (€)", value=float(r['Precio']))
+                    u_not = st.text_area("Notas", value=r['Notas'] if pd.notna(r['Notas']) else "")
+                    if st.form_submit_button("Ok"):
+                        df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
+                        conn.update(worksheet="Pedidos", data=df_pedidos)
+                        # Sincronización factura
+                        df_facturas['ID_s'] = df_facturas['ID'].astype(str)
+                        idx = df_facturas[df_facturas['ID_s'] == str(r['ID'])].index
+                        if not idx.empty:
+                            df_facturas.loc[idx, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
+                            conn.update(worksheet="Facturas", data=df_facturas.drop(columns=['ID_s']))
+                        st.cache_data.clear()
+                        st.rerun() # ESTO CIERRA EL DESPLEGABLE
+                
+                if st.button("🗑️ ELIMINAR", key=f"del_{r['ID']}", type="primary"):
+                    df_pedidos = df_pedidos.drop(i)
+                    conn.update(worksheet="Pedidos", data=df_pedidos)
+                    st.cache_data.clear(); st.rerun()
+
+            # 4. BOTÓN PDF (Tercero)
+            n_v = r['Notas'] if pd.notna(r['Notas']) else ""
+            pdf_data = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), n_v)
+            st.download_button("DESCARGAR PDF 📩", data=pdf_data, file_name=f"F_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
+
         st.divider()
 
 # 7. VISTA: NUEVO TRABAJO
@@ -216,7 +222,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
 
 # 8. VISTA: FACTURAS
 elif st.session_state.seccion == "FACTURAS":
-    st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
     if df_facturas.empty:
         st.info("No hay facturas registradas.")
     else:
@@ -229,13 +235,10 @@ elif st.session_state.seccion == "FACTURAS":
                         <p class="factura-detalle">{r['Pieza']} - {r['Precio']} €</p>
                     </div>
                 """, unsafe_allow_html=True)
-                c_f1, c_f2 = st.columns(2)
-                with c_f1:
-                    pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), r['Notas'])
-                    st.download_button("📩 PDF", data=pdf_bytes, file_name=f"F_{r['Cliente']}.pdf", key=f"f_dl_{i}")
-                with c_f2:
-                    if st.button("🗑️", key=f"f_del_{i}"):
-                        df_facturas = df_facturas.drop(i)
-                        conn.update(worksheet="Facturas", data=df_facturas)
-                        st.cache_data.clear(); st.rerun()
+                pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), r['Notas'])
+                st.download_button("📩 PDF", data=pdf_bytes, file_name=f"F_{r['Cliente']}.pdf", key=f"f_dl_{i}")
+                if st.button("🗑️ ELIMINAR", key=f"f_del_{i}"):
+                    df_facturas = df_facturas.drop(i)
+                    conn.update(worksheet="Facturas", data=df_facturas)
+                    st.cache_data.clear(); st.rerun()
                 st.divider()
