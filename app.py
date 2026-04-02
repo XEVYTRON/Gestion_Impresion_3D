@@ -59,7 +59,7 @@ st.set_page_config(page_title="Xevytron 3D", page_icon=icon, layout="centered")
 if logo_b64:
     st.markdown(f'<head><link rel="apple-touch-icon" href="data:image/png;base64,{logo_b64}"></head>', unsafe_allow_html=True)
 
-# --- 3. ESTILOS CSS (DISEÑO LIMPIO Y MORADO) ---
+# --- 3. ESTILOS CSS (TARJETAS BLANCAS FORZADAS) ---
 st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] { overflow-x: hidden !important; width: 100vw; }
@@ -68,15 +68,19 @@ st.markdown("""
         
         .stButton button { width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; text-transform: uppercase; background-color: #343a40 !important; color: white !important; }
         
+        /* TARJETAS BLANCAS PARA QUE SE VEAN BIEN SIEMPRE */
         .card-container { 
-            background-color: rgba(128, 128, 128, 0.1) !important; 
-            border-radius: 10px; padding: 12px; border: 1px solid rgba(128, 128, 128, 0.2); 
-            border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 10px;
+            background-color: #ffffff !important; 
+            border-radius: 10px; padding: 12px; 
+            border: 1px solid #e0e0e0; 
+            border-left: 6px solid #6f42c1; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            margin-bottom: 10px;
         }
 
-        .card-fecha { font-size: 10px; color: #999; margin: 0; text-transform: uppercase; }
+        .card-fecha { font-size: 10px; color: #777 !important; margin: 0; text-transform: uppercase; }
         .card-nombre { font-size: 18px; font-weight: 800; color: #6f42c1 !important; margin: 0; text-transform: uppercase; line-height: 1.2; }
-        .card-info { font-size: 14px; margin: 0; }
+        .card-info { font-size: 14px; color: #333 !important; margin: 0; }
 
         [data-testid="stDownloadButton"] button, .stExpander > details > summary { 
             height: 3.1rem; width: 100%; border-radius: 8px; background-color: #343a40 !important; color: white !important; margin-bottom: 8px;
@@ -84,7 +88,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. CONEXIÓN Y DATOS (LIMPIEZA DE ID) ---
+# --- 4. CONEXIÓN Y DATOS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 if 'v_menu' not in st.session_state: st.session_state.v_menu = {}
 
@@ -114,12 +118,12 @@ if nav_cols[1].button("NUEVO"): st.session_state.seccion = "NUEVO TRABAJO"; st.r
 if nav_cols[2].button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# --- 6. VISTA: TRABAJOS (CON BUSCADOR) ---
+# --- 6. VISTA: TRABAJOS ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     
     busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan o Casco").lower()
-    filtro_estado = st.pills("Ver por estado:", ESTADOS, default="Pendiente")
+    filtro_estado = st.pills("Estado:", ESTADOS, default="Pendiente")
     
     items = df_p[df_p["Estado"] == filtro_estado]
     if busqueda:
@@ -142,13 +146,13 @@ if st.session_state.seccion == "TRABAJOS":
             if r['Imagen'] and len(str(r['Imagen'])) > 100:
                 st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=150)
 
-            nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_actual}", label_visibility="collapsed")
+            nuevo_e = st.selectbox("Cambiar estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_actual}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
                 df_p.loc[i, "Estado"] = nuevo_e
                 conn.update(worksheet="Pedidos", data=df_p)
                 st.cache_data.clear(); st.rerun()
             
-            with st.expander("MODIFICAR TRABAJO ⚙️", key=f"e_{id_actual}_{ver}"):
+            with st.expander("MODIFICAR ⚙️", key=f"e_{id_actual}_{ver}"):
                 with st.form(f"f_{id_actual}_{ver}"):
                     u_cli = st.text_input("Cliente", value=r['Cliente'])
                     u_pie = st.text_input("Pieza", value=r['Pieza'])
@@ -158,17 +162,12 @@ if st.session_state.seccion == "TRABAJOS":
                     
                     if st.form_submit_button("Ok"):
                         img_64 = procesar_foto(u_img) if u_img else r['Imagen']
-                        
-                        # Actualizar Pedidos
                         df_p.loc[df_p['ID'].astype(str) == id_actual, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
                         conn.update(worksheet="Pedidos", data=df_p)
-                        
-                        # Sincronizar Facturas
                         idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
                         if not idx_f.empty:
                             df_f.loc[idx_f, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
                             conn.update(worksheet="Facturas", data=df_f)
-                        
                         st.session_state.v_menu[id_actual] = ver + 1
                         st.cache_data.clear(); st.rerun()
 
@@ -212,8 +211,8 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
 
 # --- 8. VISTA: FACTURAS ---
 elif st.session_state.seccion == "FACTURAS":
-    st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
-    busqueda_f = st.text_input("🔍 Buscar en historial...", placeholder="Nombre o pieza...").lower()
+    st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
+    busqueda_f = st.text_input("🔍 Buscar...", placeholder="Nombre o pieza...").lower()
     items_f = df_f.iloc[::-1]
     if busqueda_f:
         items_f = items_f[items_f['Cliente'].str.lower().str.contains(busqueda_f) | 
@@ -234,7 +233,7 @@ elif st.session_state.seccion == "FACTURAS":
             pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'])
             st.download_button("DESCARGAR 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"fpdf_{r['ID']}")
             
-            if st.button("BORRAR FACTURA 🗑️", key=f"fdel_{r['ID']}"):
+            if st.button("BORRAR 🗑️", key=f"fdel_{r['ID']}"):
                 df_f_upd = df_f[df_f['ID'].astype(str) != str(r['ID'])]
                 conn.update(worksheet="Facturas", data=df_f_upd)
                 st.cache_data.clear(); st.rerun()
