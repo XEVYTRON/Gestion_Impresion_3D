@@ -62,7 +62,7 @@ st.markdown("""
 # 2. CONEXIÓN A DATOS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=10) # Cache muy corta para ver cambios rápido
+@st.cache_data(ttl=10)
 def cargar_datos():
     try:
         p = conn.read(worksheet="Pedidos", ttl=0)
@@ -109,7 +109,7 @@ if nav2.button("NUEVO TRABAJO"): st.session_state.seccion = "NUEVO TRABAJO"; st.
 if nav3.button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# 5. VISTA: TRABAJOS (CON SINCRONIZACIÓN CORREGIDA)
+# 5. VISTA: TRABAJOS (CON RECREACIÓN DE FACTURA SI NO EXISTE)
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     filtro = st.pills("Estado:", ESTADOS, default="Pendiente")
@@ -143,16 +143,27 @@ if st.session_state.seccion == "TRABAJOS":
                             df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
                             conn.update(worksheet="Pedidos", data=df_pedidos)
                             
-                            # 2. Sincronizar con Facturas por ID (usando strings)
-                            if not df_facturas.empty:
-                                df_facturas['ID'] = df_facturas['ID'].astype(str)
-                                id_buscado = str(r['ID'])
-                                idx = df_facturas[df_facturas['ID'] == id_buscado].index
-                                if not idx.empty:
-                                    df_facturas.loc[idx, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
-                                    conn.update(worksheet="Facturas", data=df_facturas)
+                            # 2. Sincronizar o Recrear Factura
+                            id_buscado = str(r['ID'])
+                            df_facturas['ID_str'] = df_facturas['ID'].astype(str)
+                            idx = df_facturas[df_facturas['ID_str'] == id_buscado].index
                             
-                            st.cache_data.clear(); st.success("¡Sincronizado!"); st.rerun()
+                            if not idx.empty:
+                                # Si existe, actualizamos
+                                df_facturas.loc[idx, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
+                                df_final_f = df_facturas.drop(columns=['ID_str'])
+                                conn.update(worksheet="Facturas", data=df_final_f)
+                            else:
+                                # Si NO existe, la creamos de nuevo
+                                nueva_f = pd.DataFrame([{
+                                    "ID": r['ID'], "Fecha": r['Fecha'], "Cliente": u_cli, 
+                                    "Pieza": u_pie, "Precio": u_pre, "Gramos": r['Gramos'], 
+                                    "Horas": r['Horas'], "Notas": u_not
+                                }])
+                                df_final_f = pd.concat([df_facturas.drop(columns=['ID_str']), nueva_f], ignore_index=True)
+                                conn.update(worksheet="Facturas", data=df_final_f)
+                            
+                            st.cache_data.clear(); st.success("¡Datos sincronizados!"); st.rerun()
                     
                     if st.button("🗑️", key=f"del_{r['ID']}", type="primary"):
                         df_pedidos = df_pedidos.drop(i)
@@ -175,23 +186,18 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
     gr = ca.number_input("Gramos", min_value=0.0, step=1.0)
     hr = cb.number_input("Horas", min_value=0.0, step=0.5)
     mgn = st.select_slider("Margen %", options=[0, 25, 50, 75, 100, 150, 200, 300], value=100)
-    
     total = ((24/1000 * gr) + (hr * 1.0)) * (1 + mgn/100)
     st.markdown(f"### TOTAL: {total:.2f} €")
     nts = st.text_area("Notas")
-    
     if st.button("GUARDAR TRABAJO"):
         if c_nom and p_nom:
             f_h = datetime.now().strftime("%d/%m/%Y")
-            # Generamos un ID de tiempo para que sea único e igual en ambas pestañas
             id_u = datetime.now().strftime("%y%m%d%H%M%S")
-            
             row_p = pd.DataFrame([{"ID": id_u, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
             row_f = pd.DataFrame([{"ID": id_u, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
-            
             conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, row_p], ignore_index=True))
             conn.update(worksheet="Facturas", data=pd.concat([df_facturas, row_f], ignore_index=True))
-            st.cache_data.clear(); st.success("Guardado en ambos sitios"); st.rerun()
+            st.cache_data.clear(); st.success("Guardado"); st.rerun()
 
 # 7. VISTA: FACTURAS (DISEÑO CLÁSICO)
 elif st.session_state.seccion == "FACTURAS":
