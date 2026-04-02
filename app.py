@@ -7,7 +7,7 @@ from fpdf import FPDF
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Xevytron 3D", layout="centered", initial_sidebar_state="collapsed")
 
-# --- ESTILOS CSS (BOTONES OSCUROS Y TARJETAS BLANCAS) ---
+# --- ESTILOS CSS (DISEÑO SOLICITADO) ---
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden;}
@@ -18,30 +18,33 @@ st.markdown("""
         
         .titulo-seccion { font-size: 22px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 20px; }
         
-        /* BOTONES: Fondo más oscuro como pediste */
+        /* BOTONES Y MENÚS: Gris oscuro solicitado */
         .stButton button { 
             width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; 
             text-transform: uppercase; border: 1px solid #ced4da; 
             background-color: #e9ecef !important; color: #333 !important;
         }
 
-        /* TARJETAS: Se mantienen blancas por petición expresa */
+        /* TARJETAS: Siempre blancas */
         .card-container { 
             background-color: #ffffff !important; 
-            border-radius: 10px; padding: 12px; border: 1px solid #e0e0e0; 
-            border-left: 5px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+            border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; 
+            border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+            margin-bottom: 5px;
         }
 
+        /* ESTILO TRABAJOS */
         .trabajo-fecha { font-size: 10px; color: #999; text-transform: uppercase; margin: 0; }
         .trabajo-cliente { font-size: 21px; font-weight: 800; color: #111; text-transform: uppercase; margin: 0; line-height: 1.1; }
         .trabajo-pieza { font-size: 16px; font-weight: 500; color: #555; margin: 0; }
         .trabajo-precio { font-size: 18px; color: #6f42c1; font-weight: bold; margin-top: 5px; }
 
+        /* ESTILO FACTURAS */
         .factura-meta { font-size: 11px; color: #777; text-transform: uppercase; margin: 0; }
         .factura-cliente { font-size: 18px; font-weight: bold; color: #111; margin: 0; }
         .factura-detalle { font-size: 16px; color: #6f42c1; font-weight: bold; margin: 0; }
         
-        /* Icono PDF y Engranaje: Fondo más oscuro */
+        /* Icono PDF y Engranaje: Fondo oscuro */
         [data-testid="stDownloadButton"] button { 
             height: 2.8rem; width: 100%; border-radius: 8px; 
             background-color: #e9ecef !important; border: 1px solid #ced4da !important;
@@ -59,7 +62,7 @@ st.markdown("""
 # 2. CONEXIÓN A DATOS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=60) # Cache corta para evitar bloqueos de cuota
+@st.cache_data(ttl=10) # Cache muy corta para ver cambios rápido
 def cargar_datos():
     try:
         p = conn.read(worksheet="Pedidos", ttl=0)
@@ -73,12 +76,12 @@ def cargar_datos():
 df_pedidos, df_facturas = cargar_datos()
 
 if df_pedidos is None:
-    st.error("Error de conexión. Espera un momento y refresca.")
+    st.error("Error de conexión. Refresca la página.")
     st.stop()
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 
-# 3. LÓGICA PDF
+# 3. LÓGICA DE PDF
 def crear_factura_pdf(id_fac, fecha, cliente, pieza, gramos, horas, total, notas=""):
     pdf = FPDF()
     pdf.add_page()
@@ -90,11 +93,9 @@ def crear_factura_pdf(id_fac, fecha, cliente, pieza, gramos, horas, total, notas
     pdf.cell(200, 8, txt=f"Cliente: {cliente}", ln=True)
     pdf.cell(200, 8, txt=f"Trabajo: {pieza}", ln=True)
     if notas:
-        pdf.ln(5)
-        pdf.set_font("Arial", 'I', 10)
+        pdf.ln(5); pdf.set_font("Arial", 'I', 10)
         pdf.multi_cell(200, 8, txt=f"Notas: {notas}")
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 14) 
+    pdf.ln(10); pdf.set_font("Arial", 'B', 14) 
     pdf.cell(200, 10, txt=f"TOTAL: {total:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
@@ -118,11 +119,18 @@ if st.session_state.seccion == "TRABAJOS":
         with st.container():
             col_dat, col_pdf, col_ed = st.columns([2.2, 0.6, 1.2])
             with col_dat:
-                st.markdown(f'<div class="card-container"><p class="trabajo-fecha">{r["Fecha"]}</p><p class="trabajo-cliente">{r["Cliente"]}</p><p class="trabajo-pieza">{r["Pieza"]}</p><p class="trabajo-precio">{r["Precio"]} €</p></div>', unsafe_allow_html=True)
+                st.markdown(f"""
+                    <div class="card-container">
+                        <p class="trabajo-fecha">{r['Fecha']}</p>
+                        <p class="trabajo-cliente">{r['Cliente']}</p>
+                        <p class="trabajo-pieza">{r['Pieza']}</p>
+                        <p class="trabajo-precio">{r['Precio']} €</p>
+                    </div>
+                """, unsafe_allow_html=True)
             with col_pdf:
                 n_v = r['Notas'] if pd.notna(r['Notas']) else ""
                 pdf = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), n_v)
-                st.download_button("📄", data=pdf, file_name=f"Fac_{r['Cliente']}.pdf", key=f"pdf_{r['ID']}")
+                st.download_button("📄", data=pdf, file_name=f"Fac_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
             with col_ed:
                 with st.expander("⚙️"):
                     with st.form(f"f_ed_{r['ID']}"):
@@ -131,26 +139,21 @@ if st.session_state.seccion == "TRABAJOS":
                         u_pre = st.number_input("Precio (€)", value=float(r['Precio']))
                         u_not = st.text_area("Notas", value=r['Notas'] if pd.notna(r['Notas']) else "")
                         if st.form_submit_button("Ok"):
-                            # Actualizar Pedidos
+                            # 1. Actualizar Pedidos
                             df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
                             conn.update(worksheet="Pedidos", data=df_pedidos)
                             
-                            # SINCRONIZACIÓN FORZADA CON FACTURAS
+                            # 2. Sincronizar con Facturas por ID (usando strings)
                             if not df_facturas.empty:
-                                # Forzamos a ambos a ser comparados como strings para evitar errores de búsqueda
+                                df_facturas['ID'] = df_facturas['ID'].astype(str)
                                 id_buscado = str(r['ID'])
-                                df_facturas['ID_str'] = df_facturas['ID'].astype(str)
-                                idx_f = df_facturas[df_facturas['ID_str'] == id_buscado].index
-                                
-                                if not idx_f.empty:
-                                    df_facturas.loc[idx_f, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
-                                    # Eliminamos la columna temporal antes de subir
-                                    df_final_f = df_facturas.drop(columns=['ID_str'])
-                                    conn.update(worksheet="Facturas", data=df_final_f)
-                                
-                            st.cache_data.clear()
-                            st.success("Sincronizado")
-                            st.rerun()
+                                idx = df_facturas[df_facturas['ID'] == id_buscado].index
+                                if not idx.empty:
+                                    df_facturas.loc[idx, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
+                                    conn.update(worksheet="Facturas", data=df_facturas)
+                            
+                            st.cache_data.clear(); st.success("¡Sincronizado!"); st.rerun()
+                    
                     if st.button("🗑️", key=f"del_{r['ID']}", type="primary"):
                         df_pedidos = df_pedidos.drop(i)
                         conn.update(worksheet="Pedidos", data=df_pedidos)
@@ -172,35 +175,45 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
     gr = ca.number_input("Gramos", min_value=0.0, step=1.0)
     hr = cb.number_input("Horas", min_value=0.0, step=0.5)
     mgn = st.select_slider("Margen %", options=[0, 25, 50, 75, 100, 150, 200, 300], value=100)
+    
     total = ((24/1000 * gr) + (hr * 1.0)) * (1 + mgn/100)
     st.markdown(f"### TOTAL: {total:.2f} €")
     nts = st.text_area("Notas")
+    
     if st.button("GUARDAR TRABAJO"):
         if c_nom and p_nom:
             f_h = datetime.now().strftime("%d/%m/%Y")
-            # Generar ID único basado en el tiempo para evitar fallos de duplicados
-            id_n = datetime.now().strftime("%y%m%d%H%M%S")
-            row_p = pd.DataFrame([{"ID": id_n, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
-            row_f = pd.DataFrame([{"ID": id_n, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
+            # Generamos un ID de tiempo para que sea único e igual en ambas pestañas
+            id_u = datetime.now().strftime("%y%m%d%H%M%S")
+            
+            row_p = pd.DataFrame([{"ID": id_u, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
+            row_f = pd.DataFrame([{"ID": id_u, "Fecha": f_h, "Cliente": c_nom, "Pieza": p_nom, "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts}])
             
             conn.update(worksheet="Pedidos", data=pd.concat([df_pedidos, row_p], ignore_index=True))
             conn.update(worksheet="Facturas", data=pd.concat([df_facturas, row_f], ignore_index=True))
-            st.cache_data.clear(); st.success("Guardado"); st.rerun()
+            st.cache_data.clear(); st.success("Guardado en ambos sitios"); st.rerun()
 
-# 7. VISTA: FACTURAS
+# 7. VISTA: FACTURAS (DISEÑO CLÁSICO)
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
     if df_facturas.empty:
         st.info("No hay facturas registradas.")
     else:
-        for i, r in df_facturas.iloc[::-1].iterrows():
+        df_inv = df_facturas.iloc[::-1]
+        for i, r in df_inv.iterrows():
             with st.container():
-                st.markdown(f'<div class="card-container"><p class="factura-meta">{r["Fecha"]} | ID: {r["ID"]}</p><p class="factura-cliente">{r["Cliente"]}</p><p class="factura-detalle">{r["Pieza"]} - {r["Precio"]} €</p></div>', unsafe_allow_html=True)
-                c1, c2 = st.columns(2)
-                with c1:
-                    pdf = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), r['Notas'])
-                    st.download_button("📩 PDF", data=pdf, file_name=f"F_{r['Cliente']}.pdf", key=f"f_dl_{i}")
-                with c2:
+                st.markdown(f"""
+                    <div class="card-container">
+                        <p class="factura-meta">{r['Fecha']} | ID: {r['ID']}</p>
+                        <p class="factura-cliente">{r['Cliente']}</p>
+                        <p class="factura-detalle">{r['Pieza']} - {r['Precio']} €</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                c_f1, c_f2 = st.columns(2)
+                with c_f1:
+                    pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), r['Notas'])
+                    st.download_button("📩 PDF", data=pdf_bytes, file_name=f"F_{r['Cliente']}.pdf", key=f"f_dl_{i}")
+                with c_f2:
                     if st.button("🗑️", key=f"f_del_{i}"):
                         df_facturas = df_facturas.drop(i)
                         conn.update(worksheet="Facturas", data=df_facturas)
