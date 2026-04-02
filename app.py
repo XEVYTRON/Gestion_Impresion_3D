@@ -41,17 +41,9 @@ if logo_base64:
         </head>
     """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS (DISEÑO ANTI-SCROLL LATERAL) ---
+# --- ESTILOS CSS (DISEÑO ESTABLE) ---
 st.markdown("""
     <style>
-        /* Bloqueamos el scroll horizontal en toda la app */
-        html, body, [data-testid="stAppViewContainer"] {
-            overflow-x: hidden !important;
-            width: 100vw;
-            margin: 0;
-            padding: 0;
-        }
-
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
@@ -72,9 +64,7 @@ st.markdown("""
             background-color: #ffffff !important; 
             border-radius: 10px; padding: 12px; border: 1px solid #e0e0e0; 
             border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
-            margin-bottom: 8px;
             width: 100%;
-            box-sizing: border-box;
         }
 
         .trabajo-fecha { font-size: 10px; color: #999; text-transform: uppercase; margin: 0; }
@@ -82,34 +72,18 @@ st.markdown("""
         .trabajo-pieza { font-size: 15px; font-weight: 500; color: #555; margin: 0; }
         .trabajo-precio { font-size: 17px; color: #6f42c1; font-weight: bold; margin-top: 5px; }
 
-        /* ARREGLO CRÍTICO PARA COLUMNAS EN MÓVIL (SIN DESBORDE) */
-        [data-testid="column"] {
-            width: 48% !important; /* Usamos menos del 50% para evitar el scroll lateral */
-            flex: 1 1 auto !important;
-            min-width: 0 !important;
-        }
-        [data-testid="stHorizontalBlock"] {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 8px !important;
-            width: 100% !important;
-            padding: 0 !important;
-        }
-
         /* BOTONES PDF Y AJUSTES */
         [data-testid="stDownloadButton"] button, .stExpander > details > summary { 
             height: 2.8rem; width: 100%; border-radius: 8px; 
             background-color: #343a40 !important; border: 1px solid #212529 !important;
             color: #ffffff !important;
             display: flex; align-items: center; justify-content: center;
-            font-size: 14px !important;
         }
         [data-testid="stDownloadButton"] button p { color: white !important; font-weight: bold; }
         .stExpander > details > summary svg { fill: white !important; }
-        .stExpander { border: none !important; width: 100% !important; }
+        .stExpander { border: none !important; }
         
-        .stSelectbox { margin-bottom: 10px; }
+        .stSelectbox { margin-top: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -171,30 +145,22 @@ if st.session_state.seccion == "TRABAJOS":
     
     for i, r in items.iterrows():
         with st.container():
-            # Info
-            st.markdown(f"""
-                <div class="card-container">
-                    <p class="trabajo-fecha">{r['Fecha']}</p>
-                    <p class="trabajo-cliente">{r['Cliente']}</p>
-                    <p class="trabajo-pieza">{r['Pieza']}</p>
-                    <p class="trabajo-precio">{r['Precio']} €</p>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            # Estado
-            nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"sel_{r['ID']}", label_visibility="collapsed")
-            if nuevo_e != r['Estado']:
-                df_pedidos.loc[i, "Estado"] = nuevo_e
-                conn.update(worksheet="Pedidos", data=df_pedidos)
-                st.cache_data.clear(); st.rerun()
-            
-            # Botones PDF y Ajustes (Ajustados para no desbordar)
-            c_pdf, c_ed = st.columns(2)
-            with c_pdf:
+            # FILA SUPERIOR: INFO | PDF | AJUSTES
+            col_dat, col_pdf, col_ed = st.columns([2.2, 0.7, 1.1])
+            with col_dat:
+                st.markdown(f"""
+                    <div class="card-container">
+                        <p class="trabajo-fecha">{r['Fecha']}</p>
+                        <p class="trabajo-cliente">{r['Cliente']}</p>
+                        <p class="trabajo-pieza">{r['Pieza']}</p>
+                        <p class="trabajo-precio">{r['Precio']} €</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            with col_pdf:
                 n_v = r['Notas'] if pd.notna(r['Notas']) else ""
                 pdf_b = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), n_v)
                 st.download_button("PDF", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
-            with c_ed:
+            with col_ed:
                 with st.expander("⚙️"):
                     with st.form(f"f_ed_{r['ID']}"):
                         u_cli = st.text_input("Cliente", value=r['Cliente'])
@@ -218,6 +184,13 @@ if st.session_state.seccion == "TRABAJOS":
                         df_pedidos = df_pedidos.drop(i)
                         conn.update(worksheet="Pedidos", data=df_pedidos)
                         st.cache_data.clear(); st.rerun()
+            
+            # FILA INFERIOR: ESTADO (Ancho completo)
+            nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"sel_{r['ID']}", label_visibility="collapsed")
+            if nuevo_e != r['Estado']:
+                df_pedidos.loc[i, "Estado"] = nuevo_e
+                conn.update(worksheet="Pedidos", data=df_pedidos)
+                st.cache_data.clear(); st.rerun()
         st.divider()
 
 # 7. VISTA: NUEVO TRABAJO
