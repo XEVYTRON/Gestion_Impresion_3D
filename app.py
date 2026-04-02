@@ -59,17 +59,25 @@ st.set_page_config(page_title="Xevytron 3D", page_icon=icon, layout="centered")
 if logo_b64:
     st.markdown(f'<head><link rel="apple-touch-icon" href="data:image/png;base64,{logo_b64}"></head>', unsafe_allow_html=True)
 
-# --- 3. ESTILOS CSS ---
+# --- 3. ESTILOS CSS (COLOR MORADO APLICADO AL NOMBRE) ---
 st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] { overflow-x: hidden !important; width: 100vw; }
         #MainMenu, footer, header, .stDeployButton { visibility: hidden; display: none; }
         .titulo-seccion { font-size: 20px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 15px; }
+        
         .stButton button { width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; background-color: #343a40 !important; color: white !important; }
+        
         .card-container { 
             background-color: #ffffff !important; border-radius: 10px; padding: 12px; border: 1px solid #e0e0e0; 
             border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 10px;
         }
+
+        /* Estilos de texto dentro de las tarjetas */
+        .card-fecha { font-size: 10px; color: #999; margin: 0; text-transform: uppercase; }
+        .card-nombre { font-size: 18px; font-weight: 800; color: #6f42c1 !important; margin: 0; text-transform: uppercase; line-height: 1.2; }
+        .card-info { font-size: 14px; color: #555; margin: 0; }
+
         [data-testid="stDownloadButton"] button, .stExpander > details > summary { 
             height: 3.1rem; width: 100%; border-radius: 8px; background-color: #343a40 !important; color: white !important; margin-bottom: 8px;
         }
@@ -119,23 +127,21 @@ if st.session_state.seccion == "TRABAJOS":
         with st.container():
             st.markdown(f"""
                 <div class="card-container">
-                    <p style="font-size:10px; color:#999; margin:0;">{r['Fecha']} | ID: {id_actual}</p>
-                    <p style="font-size:18px; font-weight:800; color:#111; margin:0;">{r['Cliente']}</p>
-                    <p style="font-size:14px; color:#555; margin:0;">{r['Pieza']} | <b>{r['Precio']} €</b></p>
+                    <p class="card-fecha">{r['Fecha']} | ID: {id_actual}</p>
+                    <p class="card-nombre">{r['Cliente']}</p>
+                    <p class="card-info">{r['Pieza']} | <b>{r['Precio']} €</b></p>
                 </div>
             """, unsafe_allow_html=True)
             
             if r['Imagen'] and len(str(r['Imagen'])) > 100:
                 st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=150)
 
-            # Cambio rápido de estado
             nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_actual}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
                 df_p.loc[i, "Estado"] = nuevo_e
                 conn.update(worksheet="Pedidos", data=df_p)
                 st.cache_data.clear(); st.rerun()
             
-            # Formulario de modificación
             with st.expander("MODIFICAR TRABAJO ⚙️", key=f"e_{id_actual}_{ver}"):
                 with st.form(f"f_{id_actual}_{ver}"):
                     u_cli = st.text_input("Cliente", value=r['Cliente'])
@@ -146,14 +152,10 @@ if st.session_state.seccion == "TRABAJOS":
                     
                     if st.form_submit_button("GUARDAR CAMBIOS"):
                         img_64 = procesar_foto(u_img) if u_img else r['Imagen']
-                        
-                        # ACTUALIZACIÓN MAESTRA POR ID
-                        # 1. En Pedidos
                         idx_p = df_p[df_p['ID'].astype(str) == id_actual].index
                         df_p.loc[idx_p, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
                         conn.update(worksheet="Pedidos", data=df_p)
                         
-                        # 2. En Facturas (Sincronización gemela)
                         idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
                         if not idx_f.empty:
                             df_f.loc[idx_f, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
@@ -196,14 +198,9 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
                 "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", 
                 "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts, "Imagen": img_64
             }])
-            # Guardamos en ambas hojas
-            df_p_new = pd.concat([df_p, row], ignore_index=True)
-            conn.update(worksheet="Pedidos", data=df_p_new)
-            
-            df_f_new = pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True)
-            conn.update(worksheet="Facturas", data=df_f_new)
-            
-            st.cache_data.clear(); st.success("¡Trabajo guardado correctamente!"); st.rerun()
+            conn.update(worksheet="Pedidos", data=pd.concat([df_p, row], ignore_index=True))
+            conn.update(worksheet="Facturas", data=pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True))
+            st.cache_data.clear(); st.success("¡Trabajo guardado!"); st.rerun()
 
 # --- 8. VISTA: FACTURAS ---
 elif st.session_state.seccion == "FACTURAS":
@@ -214,9 +211,9 @@ elif st.session_state.seccion == "FACTURAS":
             with st.container():
                 st.markdown(f"""
                     <div class="card-container">
-                        <p style="font-size:10px; color:#999; margin:0;">{r['Fecha']} | ID: {r['ID']}</p>
-                        <p style="font-size:17px; font-weight:800; color:#111; margin:0;">{r['Cliente']}</p>
-                        <p style="font-size:15px; color:#6f42c1; font-weight:bold; margin:0;">{r['Pieza']} - {r['Precio']} €</p>
+                        <p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p>
+                        <p class="card-nombre">{r['Cliente']}</p>
+                        <p class="card-info">{r['Pieza']} - <b>{r['Precio']} €</b></p>
                     </div>
                 """, unsafe_allow_html=True)
                 if r['Imagen'] and len(str(r['Imagen'])) > 100:
