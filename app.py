@@ -7,7 +7,7 @@ from PIL import Image
 import base64
 from io import BytesIO
 
-# 1. PROCESAMIENTO DE IMÁGENES
+# 1. PROCESAMIENTO DE IMÁGENES (OPTIMIZADO)
 def get_base64_of_bin_file(img_path):
     try:
         img = Image.open(img_path)
@@ -59,16 +59,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. DATOS
+# 3. DATOS (CON LIMPIEZA DE ID)
 conn = st.connection("gsheets", type=GSheetsConnection)
 if 'v_menu' not in st.session_state: st.session_state.v_menu = {}
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=2)
 def cargar_datos():
     try:
         p = conn.read(worksheet="Pedidos", ttl=0)
         f = conn.read(worksheet="Facturas", ttl=0)
         for df in [p, f]:
+            # Limpieza crítica de ID: convertir a string y quitar decimales si existen
+            if 'ID' in df.columns:
+                df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False)
             for col in ['Notas', 'Imagen']:
                 if col not in df.columns: df[col] = ""
         return p, f
@@ -90,18 +93,15 @@ def crear_pdf(id_f, fecha, cli, pie, tot, nts="", img_b64=""):
     pdf.cell(200, 7, txt=f"ID: {id_f} | Fecha: {fecha}", ln=True)
     pdf.cell(200, 7, txt=f"Cliente: {cli}", ln=True)
     pdf.cell(200, 7, txt=f"Trabajo: {pie}", ln=True)
-    
     if nts:
         pdf.ln(2); pdf.set_font("Arial", 'I', 10)
         pdf.multi_cell(200, 6, txt=f"Notas: {nts}")
-    
     if img_b64 and len(str(img_b64)) > 100:
         try:
             img_raw = base64.b64decode(img_b64)
             img_io = BytesIO(img_raw)
             pdf.ln(5); pdf.image(img_io, w=50); pdf.ln(5)
         except: pass
-
     pdf.ln(5); pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt=f"TOTAL: {tot:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
@@ -144,27 +144,25 @@ if st.session_state.seccion == "TRABAJOS":
                     
                     if st.form_submit_button("Ok"):
                         img_64 = procesar_imagen_mini(u_img) if u_img else r['Imagen']
-                        # Actualizar Pedidos
+                        
+                        # 1. Actualizar Pedidos
                         df_p.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
                         conn.update(worksheet="Pedidos", data=df_p)
                         
-                        # SINCRONIZACIÓN CON FACTURAS
-                        df_f['ID_temp'] = df_f['ID'].astype(str)
-                        idx_f = df_f[df_f['ID_temp'] == id_actual].index
+                        # 2. Sincronizar Facturas (Búsqueda forzada por ID)
+                        idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
                         if not idx_f.empty:
                             df_f.loc[idx_f, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
-                            conn.update(worksheet="Facturas", data=df_f.drop(columns=['ID_temp']))
+                            conn.update(worksheet="Facturas", data=df_f)
                         
                         st.session_state.v_menu[r['ID']] = ver + 1
                         st.cache_data.clear(); st.rerun()
 
                 if st.button("🗑️ ELIMINAR", key=f"d_{r['ID']}"):
-                    # Borrar de Pedidos
                     df_p = df_p.drop(i)
                     conn.update(worksheet="Pedidos", data=df_p)
-                    # Borrar de Facturas también
-                    df_f['ID_temp'] = df_f['ID'].astype(str)
-                    df_f = df_f[df_f['ID_temp'] != id_actual].drop(columns=['ID_temp'])
+                    # Borrado gemelo en Facturas
+                    df_f = df_f[df_f['ID'].astype(str) != id_actual]
                     conn.update(worksheet="Facturas", data=df_f)
                     st.cache_data.clear(); st.rerun()
 
