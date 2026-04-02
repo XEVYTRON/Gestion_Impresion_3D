@@ -20,10 +20,12 @@ def get_base64_of_bin_file(img_path):
 def procesar_imagen_para_gsheets(uploaded_file):
     if uploaded_file is not None:
         img = Image.open(uploaded_file)
-        # Redimensionar para que quepa en Google Sheets (max 300px)
-        img.thumbnail((300, 300))
+        # Convertir a RGB para evitar errores con PNGs transparentes en el PDF
+        img = img.convert("RGB")
+        # Redimensionar para no saturar el Excel
+        img.thumbnail((400, 400))
         buffer = BytesIO()
-        img.save(buffer, format="JPEG", quality=60)
+        img.save(buffer, format="JPEG", quality=70)
         return base64.b64encode(buffer.getvalue()).decode()
     return ""
 
@@ -56,24 +58,19 @@ st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] { overflow-x: hidden !important; width: 100vw; margin: 0; padding: 0; }
         #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;} .stDeployButton {display:none;}
-        
         .titulo-seccion { font-size: 22px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 20px; }
         .stButton button { width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; text-transform: uppercase; background-color: #343a40 !important; color: white !important; }
-        
         .card-container { 
             background-color: #ffffff !important; border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; 
             border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 10px;
         }
-        .trabajo-cliente { font-size: 20px; font-weight: 800; color: #111; text-transform: uppercase; margin: 0; }
-        .img-referencia { border-radius: 8px; margin-top: 10px; border: 1px solid #ddd; }
-
         [data-testid="stDownloadButton"] button, .stExpander > details > summary { 
             height: 3.2rem; width: 100%; border-radius: 8px; background-color: #343a40 !important; color: white !important; display: flex; align-items: center; justify-content: center; margin-bottom: 8px;
         }
     </style>
 """, unsafe_allow_html=True)
 
-# 3. CONEXIÓN A DATOS
+# 3. CONEXIÓN A DATOS Y SESIÓN
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 if 'v_menu' not in st.session_state:
@@ -99,7 +96,7 @@ if df_pedidos is None:
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 
-# 4. LÓGICA DE PDF (CON IMAGEN)
+# 4. LÓGICA DE PDF CORREGIDA PARA IMÁGENES
 def crear_factura_pdf(id_fac, fecha, cliente, pieza, total, notas="", img_base64=""):
     pdf = FPDF()
     pdf.add_page()
@@ -115,19 +112,25 @@ def crear_factura_pdf(id_fac, fecha, cliente, pieza, total, notas="", img_base64
         pdf.ln(5); pdf.set_font("Arial", 'I', 10)
         pdf.multi_cell(200, 8, txt=f"Notas: {notas}")
     
-    # Insertar imagen si existe
-    if img_base64:
+    # INSERTAR IMAGEN DE REFERENCIA
+    if img_base64 and len(str(img_base64)) > 50:
         try:
+            # Decodificar imagen
             img_data = base64.b64decode(img_base64)
             img_io = BytesIO(img_data)
-            pdf.ln(10)
+            
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 12)
             pdf.cell(200, 8, txt="Referencia Visual:", ln=True)
-            # Guardamos temporalmente para FPDF
-            pdf.image(img_io, x=10, y=pdf.get_y(), w=50)
-            pdf.ln(55)
-        except:
-            pass
+            
+            # Dibujar imagen (w=60 para que sea visible pero no enorme)
+            pdf.image(img_io, x=10, y=pdf.get_y(), w=60)
+            pdf.ln(65) # Espacio para que el precio no pise la foto
+        except Exception as e:
+            pdf.set_font("Arial", 'I', 8)
+            pdf.cell(200, 8, txt="(Imagen no disponible en este PDF)", ln=True)
 
+    pdf.ln(5)
     pdf.set_font("Arial", 'B', 14) 
     pdf.cell(200, 10, txt=f"TOTAL: {total:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
@@ -159,9 +162,8 @@ if st.session_state.seccion == "TRABAJOS":
                 </div>
             """, unsafe_allow_html=True)
             
-            # Mostrar miniatura si hay imagen
             if r['Imagen']:
-                st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=150)
+                st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=180, caption="Referencia")
             
             nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"sel_{r['ID']}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
@@ -175,14 +177,13 @@ if st.session_state.seccion == "TRABAJOS":
                     u_pie = st.text_input("Pieza", value=r['Pieza'])
                     u_pre = st.number_input("Precio (€)", value=float(r['Precio']))
                     u_not = st.text_area("Notas", value=r['Notas'])
-                    # Opción de cambiar foto
-                    u_img_file = st.file_uploader("Actualizar Referencia", type=['png', 'jpg', 'jpeg'], key=f"img_u_{r['ID']}")
+                    u_img_file = st.file_uploader("Cambiar Imagen", type=['png', 'jpg', 'jpeg'], key=f"img_u_{r['ID']}")
                     
                     if st.form_submit_button("Ok"):
                         nueva_img_64 = procesar_imagen_para_gsheets(u_img_file) if u_img_file else r['Imagen']
                         df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, nueva_img_64]
                         conn.update(worksheet="Pedidos", data=df_pedidos)
-                        st.session_state.v_menu[r['ID']] = ver + 1
+                        st.session_state.v_menu[r['ID']] = ver + 1 # CAMBIO DE KEY PARA CERRAR
                         st.cache_data.clear(); st.rerun()
                 
                 if st.button("🗑️ ELIMINAR", key=f"del_{r['ID']}", type="primary"):
@@ -190,7 +191,7 @@ if st.session_state.seccion == "TRABAJOS":
                     conn.update(worksheet="Pedidos", data=df_pedidos); st.cache_data.clear(); st.rerun()
 
             pdf_data = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'])
-            st.download_button("PDF 📩", data=pdf_data, file_name=f"F_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
+            st.download_button("DESCARGAR PDF 📩", data=pdf_data, file_name=f"F_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
         st.divider()
 
 # 7. VISTA: NUEVO TRABAJO
@@ -205,9 +206,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
     total = ((24/1000 * gr) + (hr * 1.0)) * (1 + mgn/100)
     st.markdown(f"### TOTAL: {total:.2f} €")
     nts = st.text_area("Notas")
-    
-    # SUBIDA DE IMAGEN
-    img_ref = st.file_uploader("Cargar Foto de Referencia", type=['png', 'jpg', 'jpeg'])
+    img_ref = st.file_uploader("Cargar Foto Referencia", type=['png', 'jpg', 'jpeg'])
     
     if st.button("GUARDAR TRABAJO"):
         if c_nom and p_nom:
