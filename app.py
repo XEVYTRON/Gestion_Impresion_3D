@@ -41,13 +41,13 @@ if logo_base64:
         </head>
     """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS (DISEÑO VERTICAL ANTI-SCROLL) ---
+# --- ESTILOS CSS (DISEÑO VERTICAL Y ANTI-SCROLL) ---
 st.markdown("""
     <style>
-        /* Bloqueo total de movimiento lateral */
+        /* Bloqueo total de movimiento lateral y desbordes */
         html, body, [data-testid="stAppViewContainer"] {
             overflow-x: hidden !important;
-            width: 100vw;
+            max-width: 100vw !important;
             margin: 0; padding: 0;
         }
 
@@ -89,12 +89,18 @@ st.markdown("""
         .stExpander > details > summary svg { fill: white !important; }
         .stExpander { border: none !important; width: 100% !important; }
         
+        /* Asegurar que el selectbox no se pase del ancho */
         .stSelectbox { margin-bottom: 10px; width: 100% !important; }
+        div[data-baseweb="select"] { width: 100% !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# 3. CONEXIÓN A DATOS
+# 3. CONEXIÓN A DATOS Y SESIÓN
 conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Inicializar versiones de los menús para poder cerrarlos
+if 'v_menu' not in st.session_state:
+    st.session_state.v_menu = {}
 
 @st.cache_data(ttl=10)
 def cargar_datos():
@@ -143,13 +149,16 @@ if nav2.button("NUEVO"): st.session_state.seccion = "NUEVO TRABAJO"; st.rerun()
 if nav3.button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# 6. VISTA: TRABAJOS (ORDEN VERTICAL SOLICITADO)
+# 6. VISTA: TRABAJOS (ORDEN VERTICAL)
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
-    filtro = st.pills("Ver:", ESTADOS, default="Pendiente")
+    filtro = st.pills("Estado actual:", ESTADOS, default="Pendiente")
     items = df_pedidos[df_pedidos["Estado"] == filtro]
     
     for i, r in items.iterrows():
+        # Obtener versión del menú actual
+        ver = st.session_state.v_menu.get(r['ID'], 0)
+        
         with st.container():
             # 1. INFO CARD
             st.markdown(f"""
@@ -161,38 +170,43 @@ if st.session_state.seccion == "TRABAJOS":
                 </div>
             """, unsafe_allow_html=True)
             
-            # 2. DESPLEGABLE ESTADO (Primero)
-            nuevo_e = st.selectbox("Cambiar estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"sel_{r['ID']}", label_visibility="collapsed")
+            # 2. DESPLEGABLE ESTADO
+            nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"sel_{r['ID']}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
                 df_pedidos.loc[i, "Estado"] = nuevo_e
                 conn.update(worksheet="Pedidos", data=df_pedidos)
                 st.cache_data.clear(); st.rerun()
             
-            # 3. MODIFICAR TRABAJO (Segundo - Se cierra solo tras pulsar Ok)
-            with st.expander("MODIFICAR TRABAJO ⚙️"):
-                with st.form(f"f_ed_{r['ID']}"):
+            # 3. MODIFICAR TRABAJO (Usamos la versión en la key para obligar el cierre)
+            with st.expander("MODIFICAR TRABAJO ⚙️", key=f"exp_{r['ID']}_{ver}"):
+                with st.form(f"f_ed_{r['ID']}_{ver}"):
                     u_cli = st.text_input("Cliente", value=r['Cliente'])
                     u_pie = st.text_input("Pieza", value=r['Pieza'])
                     u_pre = st.number_input("Precio (€)", value=float(r['Precio']))
                     u_not = st.text_area("Notas", value=r['Notas'] if pd.notna(r['Notas']) else "")
+                    
                     if st.form_submit_button("Ok"):
+                        # Actualizar datos
                         df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
                         conn.update(worksheet="Pedidos", data=df_pedidos)
-                        # Sincronización factura
+                        # Sincronizar factura
                         df_facturas['ID_s'] = df_facturas['ID'].astype(str)
                         idx = df_facturas[df_facturas['ID_s'] == str(r['ID'])].index
                         if not idx.empty:
                             df_facturas.loc[idx, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
                             conn.update(worksheet="Facturas", data=df_facturas.drop(columns=['ID_s']))
+                        
+                        # CAMBIAR VERSIÓN PARA CERRAR EL EXPANDER
+                        st.session_state.v_menu[r['ID']] = ver + 1
                         st.cache_data.clear()
-                        st.rerun() # ESTO CIERRA EL DESPLEGABLE
+                        st.rerun()
                 
-                if st.button("🗑️ ELIMINAR", key=f"del_{r['ID']}", type="primary"):
+                if st.button("🗑️ ELIMINAR TRABAJO", key=f"del_{r['ID']}", type="primary"):
                     df_pedidos = df_pedidos.drop(i)
                     conn.update(worksheet="Pedidos", data=df_pedidos)
                     st.cache_data.clear(); st.rerun()
 
-            # 4. BOTÓN PDF (Tercero)
+            # 4. BOTÓN PDF
             n_v = r['Notas'] if pd.notna(r['Notas']) else ""
             pdf_data = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), n_v)
             st.download_button("DESCARGAR PDF 📩", data=pdf_data, file_name=f"F_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
