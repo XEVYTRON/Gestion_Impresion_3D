@@ -17,7 +17,6 @@ def get_base64_of_bin_file(img_path):
     except:
         return ""
 
-# Intentamos cargar tu logo para el icono
 logo_base64 = get_base64_of_bin_file("image_7.png")
 
 # 2. CONFIGURACIÓN DE PÁGINA
@@ -42,7 +41,7 @@ if logo_base64:
         </head>
     """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS (BOTONES OSCUROS Y TARJETAS BLANCAS) ---
+# --- ESTILOS CSS (DISEÑO PREMIUM CON BOTONES OSCUROS) ---
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden;}
@@ -60,12 +59,12 @@ st.markdown("""
             background-color: #343a40 !important; color: #ffffff !important;
         }
 
-        /* TARJETAS: Blancas */
+        /* TARJETAS BLANCAS */
         .card-container { 
             background-color: #ffffff !important; 
             border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; 
             border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
-            margin-bottom: 5px;
+            margin-bottom: 8px;
         }
 
         .trabajo-fecha { font-size: 10px; color: #999; text-transform: uppercase; margin: 0; }
@@ -77,21 +76,18 @@ st.markdown("""
         .factura-cliente { font-size: 18px; font-weight: bold; color: #111; margin: 0; }
         .factura-detalle { font-size: 16px; color: #6f42c1; font-weight: bold; margin: 0; }
         
-        /* Icono PDF y Engranaje */
-        [data-testid="stDownloadButton"] button { 
+        /* Estilo para los botones de PDF y Ajustes */
+        [data-testid="stDownloadButton"] button, .stExpander > details > summary { 
             height: 2.8rem; width: 100%; border-radius: 8px; 
             background-color: #343a40 !important; border: 1px solid #212529 !important;
             color: #ffffff !important;
         }
         [data-testid="stDownloadButton"] button p { color: white !important; font-weight: bold; }
-
-        .stExpander { border: none !important; }
-        .stExpander > details > summary { 
-            background-color: #343a40 !important; border-radius: 8px; 
-            border: 1px solid #212529 !important; height: 2.8rem; 
-            display: flex; align-items: center; justify-content: center;
-        }
         .stExpander > details > summary svg { fill: white !important; }
+        .stExpander { border: none !important; }
+
+        /* Ajuste para que el desplegable de estado no rompa el diseño */
+        .stSelectbox { margin-top: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -145,10 +141,10 @@ if nav2.button("NUEVO"): st.session_state.seccion = "NUEVO TRABAJO"; st.rerun()
 if nav3.button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun()
 st.divider()
 
-# 6. VISTA: TRABAJOS
+# 6. VISTA: TRABAJOS (CON DESPLEGABLE DE ESTADO)
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
-    filtro = st.pills("Estado:", ESTADOS, default="Pendiente")
+    filtro = st.pills("Ver por estado:", ESTADOS, default="Pendiente")
     items = df_pedidos[df_pedidos["Estado"] == filtro]
     
     for i, r in items.iterrows():
@@ -178,7 +174,7 @@ if st.session_state.seccion == "TRABAJOS":
                             df_pedidos.loc[i, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [u_cli, u_pie, u_pre, u_not]
                             conn.update(worksheet="Pedidos", data=df_pedidos)
                             
-                            # Sincronizar o Recrear Factura
+                            # Sincronizar factura
                             id_b = str(r['ID'])
                             df_facturas['ID_s'] = df_facturas['ID'].astype(str)
                             idx = df_facturas[df_facturas['ID_s'] == id_b].index
@@ -193,8 +189,10 @@ if st.session_state.seccion == "TRABAJOS":
                         df_pedidos = df_pedidos.drop(i)
                         conn.update(worksheet="Pedidos", data=df_pedidos)
                         st.cache_data.clear(); st.rerun()
-            nuevo_e = st.select_slider("Mover:", options=ESTADOS, value=filtro, key=f"sl_{r['ID']}", label_visibility="collapsed")
-            if nuevo_e != filtro:
+            
+            # EL DESPLEGABLE NUEVO: Sustituye al slider para un cambio más rápido
+            nuevo_e = st.selectbox("Cambiar estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"sel_{r['ID']}", label_visibility="collapsed")
+            if nuevo_e != r['Estado']:
                 df_pedidos.loc[i, "Estado"] = nuevo_e
                 conn.update(worksheet="Pedidos", data=df_pedidos)
                 st.cache_data.clear(); st.rerun()
@@ -239,11 +237,4 @@ elif st.session_state.seccion == "FACTURAS":
                 """, unsafe_allow_html=True)
                 c_f1, c_f2 = st.columns(2)
                 with c_f1:
-                    pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Gramos'], r['Horas'], float(r['Precio']), r['Notas'])
-                    st.download_button("📩 PDF", data=pdf_bytes, file_name=f"F_{r['Cliente']}.pdf", key=f"f_dl_{i}")
-                with c_f2:
-                    if st.button("🗑️", key=f"f_del_{i}"):
-                        df_facturas = df_facturas.drop(i)
-                        conn.update(worksheet="Facturas", data=df_facturas)
-                        st.cache_data.clear(); st.rerun()
-                st.divider()
+                    pdf_bytes = crear_factura_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r
