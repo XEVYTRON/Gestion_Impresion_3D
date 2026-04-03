@@ -6,7 +6,7 @@ from fpdf import FPDF
 from PIL import Image
 from io import BytesIO
 
-# --- 1. UTILIDADES DE PDF (SÚPER SIMPLE) ---
+# --- 1. UTILIDADES DE PDF ---
 def get_base64_logo(path):
     import base64
     try:
@@ -26,9 +26,12 @@ def crear_pdf(id_f, fecha, cli, pie, tot, nts=""):
     pdf.cell(200, 7, txt=f"ID: {id_f} | Fecha: {fecha}", ln=True)
     pdf.cell(200, 7, txt=f"Cliente: {cli}", ln=True)
     pdf.cell(200, 7, txt=f"Trabajo: {pie}", ln=True)
-    if nts and nts.strip() != "":
+    
+    # Limpieza de nota para el PDF
+    nts_limpia = str(nts) if nts and str(nts).lower() != 'nan' else ""
+    if nts_limpia.strip() != "":
         pdf.ln(2); pdf.set_font("Arial", 'I', 10)
-        pdf.multi_cell(200, 6, txt=f"Notas: {nts}")
+        pdf.multi_cell(200, 6, txt=f"Notas: {nts_limpia}")
     
     pdf.ln(10); pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt=f"TOTAL: {tot:.2f} Euros", ln=True)
@@ -56,7 +59,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. DATOS (SÓLO TEXTO) ---
+# --- 4. DATOS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 if 'v_menu' not in st.session_state: st.session_state.v_menu = {}
 if 'form_reset_key' not in st.session_state: st.session_state.form_reset_key = 0
@@ -67,29 +70,29 @@ def cargar_datos():
         p = conn.read(worksheet="Pedidos", ttl=0)
         f = conn.read(worksheet="Facturas", ttl=0)
         
-        # Columnas que queremos conservar (Ignoramos Imágenes)
-        cols_validas = ['ID', 'Fecha', 'Cliente', 'Pieza', 'Estado', 'Precio', 'Gramos', 'Horas', 'Notas']
+        # Solo columnas de texto y números (Sin imágenes)
+        cols_necesarias = ['ID', 'Fecha', 'Cliente', 'Pieza', 'Estado', 'Precio', 'Gramos', 'Horas', 'Notas']
         
-        def limpiar_df(df, es_factura=False):
-            # Quedarnos solo con las columnas que no sean de imagen
-            columnas_existentes = [c for c in cols_validas if c in df.columns]
-            if es_factura and 'Estado' in columnas_existentes: columnas_existentes.remove('Estado')
-            df = df[columnas_existentes].copy()
+        def limpiar(df, es_factura=False):
+            existentes = [c for c in cols_necesarias if c in df.columns]
+            if es_factura and 'Estado' in existentes: existentes.remove('Estado')
+            df = df[existentes].copy()
             
             if 'ID' in df.columns:
                 df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False).str.strip()
+            # SEGURO CONTRA EL ERROR DE STRIP: Convertimos Notas a String y limpiamos nulos
             if 'Notas' in df.columns:
-                df['Notas'] = df['Notas'].astype(str).replace(['nan', 'None', '0', '0.0'], '')
+                df['Notas'] = df['Notas'].astype(str).replace(['nan', 'None', '0', '0.0', 'NaN'], '')
             for col in ['Gramos', 'Horas', 'Precio']:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
             return df
 
-        return limpiar_df(p), limpiar_df(f, True)
+        return limpiar(p), limpiar(f, True)
     except: return None, None
 
 df_p, df_f = cargar_datos()
-if df_p is None: st.error("Fallo de conexión. Verifica tu Excel."); st.stop()
+if df_p is None: st.error("Error al conectar con Google Sheets."); st.stop()
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 
@@ -105,7 +108,7 @@ st.divider()
 # --- 6. VISTA: TRABAJOS ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
-    busqueda = st.text_input("🔍 Buscar...", placeholder="Nombre o pieza").lower()
+    busqueda = st.text_input("🔍 Buscar...", placeholder="Cliente o pieza").lower()
     filtro_estado = st.pills("Estado:", ESTADOS, default="Pendiente")
     
     items = df_p[df_p["Estado"] == filtro_estado].sort_values(by="ID", ascending=True)
@@ -116,8 +119,19 @@ if st.session_state.seccion == "TRABAJOS":
         id_actual = str(r['ID'])
         ver = st.session_state.v_menu.get(id_actual, 0)
         with st.container():
-            nota_texto = f"Notas: {r['Notas']}" if r['Notas'] and r['Notas'].strip() != "" else ""
-            st.markdown(f"""<div class="card-container"><p class="card-fecha">{r['Fecha']} | ID: {id_actual}</p><p class="card-nombre">{r['Cliente']}</p><p class="card-pieza">Pieza: {r['Pieza']}</p><p class="card-nota">{nota_texto}</p><p class="card-precio">Precio: {r['Precio']} €</p></div>""", unsafe_allow_html=True)
+            # CORRECCIÓN DEFINITIVA PARA EL ERROR DE STRIP
+            txt_nota = str(r['Notas']) if r['Notas'] else ""
+            nota_html = f'<p class="card-nota">Notas: {txt_nota}</p>' if txt_nota.strip() != "" else ""
+            
+            st.markdown(f"""
+                <div class="card-container">
+                    <p class="card-fecha">{r['Fecha']} | ID: {id_actual}</p>
+                    <p class="card-nombre">{r['Cliente']}</p>
+                    <p class="card-pieza">Pieza: {r['Pieza']}</p>
+                    {nota_html}
+                    <p class="card-precio">Precio: {r['Precio']} €</p>
+                </div>
+            """, unsafe_allow_html=True)
             
             nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_actual}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
@@ -129,13 +143,11 @@ if st.session_state.seccion == "TRABAJOS":
                     u_cli = st.text_input("Cliente", value=r['Cliente'])
                     u_pie = st.text_input("Pieza", value=r['Pieza'])
                     u_pre = st.number_input("Precio", value=float(r['Precio']))
-                    u_not = st.text_area("Notas", value=r['Notas'])
+                    u_not = st.text_area("Notas", value=txt_nota) # Usamos la variable limpia
                     
-                    if st.form_submit_button("GUARDAR CAMBIOS"):
-                        # Aseguramos que la nota sea texto limpio
+                    if st.form_submit_button("Ok"):
                         nota_final = str(u_not).strip()
-                        
-                        # 1. Actualizar Pedidos
+                        # Actualizar Pedidos
                         idx_p = df_p[df_p['ID'].astype(str) == id_actual].index
                         if not idx_p.empty:
                             df_p.at[idx_p[0], 'Cliente'] = u_cli
@@ -143,8 +155,7 @@ if st.session_state.seccion == "TRABAJOS":
                             df_p.at[idx_p[0], 'Precio'] = float(u_pre)
                             df_p.at[idx_p[0], 'Notas'] = nota_final
                             conn.update(worksheet="Pedidos", data=df_p)
-                        
-                        # 2. Actualizar Facturas
+                        # Sincronizar Facturas
                         idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
                         if not idx_f.empty:
                             df_f.at[idx_f[0], 'Cliente'] = u_cli
@@ -152,11 +163,7 @@ if st.session_state.seccion == "TRABAJOS":
                             df_f.at[idx_f[0], 'Precio'] = float(u_pre)
                             df_f.at[idx_f[0], 'Notas'] = nota_final
                             conn.update(worksheet="Facturas", data=df_f)
-                        
-                        st.session_state.v_menu[id_actual] = ver + 1
-                        st.cache_data.clear()
-                        st.success("¡Cambios guardados!")
-                        st.rerun()
+                        st.session_state.v_menu[id_actual] = ver + 1; st.cache_data.clear(); st.rerun()
 
                 if st.button("🗑️ ELIMINAR", key=f"d_{id_actual}"):
                     df_p = df_p[df_p['ID'].astype(str) != id_actual]; conn.update(worksheet="Pedidos", data=df_p)
@@ -186,22 +193,24 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
                 id_u = datetime.now().strftime("%y%m%d%H%M%S")
                 row = pd.DataFrame([{"ID": id_u, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": str(nts).strip()}])
                 conn.update(worksheet="Pedidos", data=pd.concat([df_p, row], ignore_index=True))
-                conn.update(worksheet="Facturas", data=pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True))
+                conn.update(worksheet="Facturas", data=df_f.append(row.drop(columns=['Estado']), ignore_index=True) if hasattr(df_f, 'append') else pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True))
                 st.session_state.form_reset_key += 1; st.cache_data.clear(); st.rerun()
             else: st.error("Rellena Cliente y Pieza")
 
-# --- 8. HISTORIAL Y 9. ESTADÍSTICAS (SIMPLIFICADO) ---
+# --- 8. HISTORIAL ---
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
     items_f = df_f.sort_values(by="ID", ascending=True)
     for i, r in items_f.iterrows():
         with st.container():
-            nota_f = f"Notas: {r['Notas']}" if r['Notas'] and r['Notas'].strip() != "" else ""
-            st.markdown(f"""<div class="card-container"><p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p><p class="card-nombre">{r['Cliente']}</p><p class="card-pieza">Pieza: {r['Pieza']}</p><p class="card-nota">{nota_f}</p><p class="card-precio">Precio: {r['Precio']} €</p></div>""", unsafe_allow_html=True)
+            f_txt_nota = str(r['Notas']) if r['Notas'] else ""
+            f_nota_html = f'<p class="card-nota">Notas: {f_txt_nota}</p>' if f_txt_nota.strip() != "" else ""
+            st.markdown(f"""<div class="card-container"><p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p><p class="card-nombre">{r['Cliente']}</p><p class="card-pieza">Pieza: {r['Pieza']}</p>{f_nota_html}<p class="card-precio">Precio: {r['Precio']} €</p></div>""", unsafe_allow_html=True)
             pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'])
             st.download_button("PDF 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{r['ID']}")
             st.divider()
 
+# --- 9. ESTADÍSTICAS ---
 elif st.session_state.seccion == "ESTADISTICAS":
     st.markdown('<p class="titulo-seccion">Dashboard</p>', unsafe_allow_html=True)
     if not df_f.empty:
