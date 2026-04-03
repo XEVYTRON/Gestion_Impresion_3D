@@ -69,7 +69,7 @@ st.set_page_config(page_title="Xevytron 3D", page_icon=icon, layout="centered")
 if logo_b64:
     st.markdown(f'<head><link rel="apple-touch-icon" href="data:image/png;base64,{logo_b64}"></head>', unsafe_allow_html=True)
 
-# --- 3. ESTILOS CSS (TARJETAS OPTIMIZADAS PARA MÓVIL) ---
+# --- 3. ESTILOS CSS ---
 st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] { overflow-x: hidden !important; width: 100vw; margin: 0; padding: 0; }
@@ -133,7 +133,7 @@ if nav_cols[2].button("HISTORIAL"): st.session_state.seccion = "FACTURAS"; st.re
 if nav_cols[3].button("📊"): st.session_state.seccion = "ESTADISTICAS"; st.rerun()
 st.divider()
 
-# --- 6. VISTA: TRABAJOS (ESTRUCTURA VERTICAL CORREGIDA) ---
+# --- 6. VISTA: TRABAJOS ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan o Casco").lower()
@@ -146,13 +146,14 @@ if st.session_state.seccion == "TRABAJOS":
         id_actual = str(r['ID'])
         ver = st.session_state.v_menu.get(id_actual, 0)
         with st.container():
-            # NUEVA ESTRUCTURA DE TARJETA
+            # CORRECCIÓN LÍNEA 155: Usamos f-strings para evitar TypeErrors
+            nota_texto = f"Notas: {r['Notas']}" if r['Notas'] else ""
             st.markdown(f"""
                 <div class="card-container">
                     <p class="card-fecha">{r['Fecha']} | ID: {id_actual}</p>
                     <p class="card-nombre">{r['Cliente']}</p>
                     <p class="card-pieza">Pieza: {r['Pieza']}</p>
-                    <p class="card-nota">{"Notas: " + r['Notas'] if r['Notas'] else ""}</p>
+                    <p class="card-nota">{nota_texto}</p>
                     <p class="card-precio">Precio: {r['Precio']} €</p>
                 </div>
             """, unsafe_allow_html=True)
@@ -239,12 +240,14 @@ elif st.session_state.seccion == "FACTURAS":
         items_f = items_f[items_f['Cliente'].str.lower().str.contains(busqueda_f) | items_f['Pieza'].str.lower().str.contains(busqueda_f)]
     for i, r in items_f.iterrows():
         with st.container():
+            # CORRECCIÓN TAMBIÉN AQUÍ:
+            nota_texto_f = f"Notas: {r['Notas']}" if r['Notas'] else ""
             st.markdown(f"""
                 <div class="card-container">
                     <p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p>
                     <p class="card-nombre">{r['Cliente']}</p>
                     <p class="card-pieza">Pieza: {r['Pieza']}</p>
-                    <p class="card-nota">{"Notas: " + r['Notas'] if r['Notas'] else ""}</p>
+                    <p class="card-nota">{nota_texto_f}</p>
                     <p class="card-precio">Precio: {r['Precio']} €</p>
                 </div>
             """, unsafe_allow_html=True)
