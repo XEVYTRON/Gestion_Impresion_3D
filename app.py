@@ -20,10 +20,9 @@ def procesar_foto(file):
     if file:
         try:
             img = Image.open(file).convert("RGB")
-            # Reducimos a 150px para evitar el error de API de Google (Payload too large)
             img.thumbnail((150, 150))
             buf = BytesIO()
-            img.save(buf, format="JPEG", quality=40) # Calidad 40% para aligerar el Excel
+            img.save(buf, format="JPEG", quality=40)
             return base64.b64encode(buf.getvalue()).decode()
         except: return ""
     return ""
@@ -134,12 +133,15 @@ if nav_cols[2].button("HISTORIAL"): st.session_state.seccion = "FACTURAS"; st.re
 if nav_cols[3].button("📊"): st.session_state.seccion = "ESTADISTICAS"; st.rerun()
 st.divider()
 
-# --- 6. VISTA: TRABAJOS ---
+# --- 6. VISTA: TRABAJOS (ORDENADOS: PRIMERO CREADO, PRIMERO EN VERSE) ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan").lower()
     filtro_estado = st.pills("Estado:", ESTADOS, default="Pendiente")
-    items = df_p[df_p["Estado"] == filtro_estado]
+    
+    # Filtramos y ordenamos cronológicamente (ID ascendente)
+    items = df_p[df_p["Estado"] == filtro_estado].sort_values(by="ID", ascending=True)
+    
     if busqueda:
         items = items[items['Cliente'].str.lower().str.contains(busqueda) | items['Pieza'].str.lower().str.contains(busqueda)]
     
@@ -158,7 +160,6 @@ if st.session_state.seccion == "TRABAJOS":
                 </div>
             """, unsafe_allow_html=True)
             
-            # Miniaturas pequeñas para ahorrar memoria visual
             c_img_a, c_img_b = st.columns(2)
             if r['Imagen'] and len(str(r['Imagen'])) > 100:
                 c_img_a.image(f"data:image/jpeg;base64,{r['Imagen']}", width=70)
@@ -188,7 +189,7 @@ if st.session_state.seccion == "TRABAJOS":
                             df_p.at[row_idx, 'Pieza'] = u_pie
                             df_p.at[row_idx, 'Precio'] = float(u_pre)
                             df_p.at[row_idx, 'Notas'] = u_not
-                            df_p.at[row_idx, 'Imagen'] = str(img1_64)
+                            df_p.at[row_idx, 'Imagen'] = str(img11_64) if 'img11_64' in locals() else str(img1_64)
                             df_p.at[row_idx, 'Imagen2'] = str(img2_64)
                             conn.update(worksheet="Pedidos", data=df_p)
                         idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
@@ -230,51 +231,4 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
                 row = pd.DataFrame([{"ID": id_u, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts, "Imagen": img1_64, "Imagen2": img2_64}])
                 conn.update(worksheet="Pedidos", data=pd.concat([df_p, row], ignore_index=True))
                 conn.update(worksheet="Facturas", data=pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True))
-                st.cache_data.clear(); st.success(f"¡Guardado! Total: {total:.2f} €")
-            else: st.error("Rellena Cliente y Pieza.")
-
-# --- 8. VISTA: HISTORIAL ---
-elif st.session_state.seccion == "FACTURAS":
-    st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
-    busqueda_f = st.text_input("🔍 Buscar...", placeholder="Ej: Juan").lower()
-    items_f = df_f.iloc[::-1]
-    if busqueda_f:
-        items_f = items_f[items_f['Cliente'].str.lower().str.contains(busqueda_f) | items_f['Pieza'].str.lower().str.contains(busqueda_f)]
-    for i, r in items_f.iterrows():
-        with st.container():
-            nota_texto_f = f"Notas: {r['Notas']}" if r['Notas'] else ""
-            st.markdown(f"""
-                <div class="card-container">
-                    <p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p>
-                    <p class="card-nombre">{r['Cliente']}</p>
-                    <p class="card-pieza">Pieza: {r['Pieza']}</p>
-                    <p class="card-nota">{nota_texto_f}</p>
-                    <p class="card-precio">Precio: {r['Precio']} €</p>
-                </div>
-            """, unsafe_allow_html=True)
-            c1, c2 = st.columns(2)
-            if r['Imagen'] and len(str(r['Imagen'])) > 100: c1.image(f"data:image/jpeg;base64,{r['Imagen']}", width=70)
-            if r['Imagen2'] and len(str(r['Imagen2'])) > 100: c2.image(f"data:image/jpeg;base64,{r['Imagen2']}", width=70)
-            pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'], r['Imagen2'])
-            st.download_button("DESCARGAR 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"fpdf_{r['ID']}")
-            if st.button("BORRAR 🗑️", key=f"fdel_{r['ID']}"):
-                df_f_upd = df_f[df_f['ID'].astype(str) != str(r['ID'])]
-                conn.update(worksheet="Facturas", data=df_f_upd); st.cache_data.clear(); st.rerun()
-            st.divider()
-
-# --- 9. VISTA: ESTADÍSTICAS ---
-elif st.session_state.seccion == "ESTADISTICAS":
-    st.markdown('<p class="titulo-seccion">Dashboard VYE3D</p>', unsafe_allow_html=True)
-    if not df_f.empty:
-        df_f['Precio'] = pd.to_numeric(df_f['Precio'], errors='coerce')
-        df_f['Gramos'] = pd.to_numeric(df_f['Gramos'], errors='coerce')
-        df_f['Horas'] = pd.to_numeric(df_f['Horas'], errors='coerce')
-        df_f['Fecha_DT'] = pd.to_datetime(df_f['Fecha'], format="%d/%m/%Y")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Ventas", f"{df_f['Precio'].sum():.2f} €")
-        m2.metric("Gramos Usados", f"{df_f['Gramos'].sum()/1000:.2f} Kg")
-        m3.metric("Horas Totales", f"{df_f['Horas'].sum():.0f} h")
-        st.divider()
-        st.subheader("📈 Ventas Mensuales")
-        ventas_mes = df_f.set_index('Fecha_DT').resample('M')['Precio'].sum()
-        st.bar_chart(ventas_mes)
+                st.cache_data.clear(); st
