@@ -22,6 +22,7 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas=""):
     pdf.set_font("Arial", '', 11)
     
     def format_es(texto):
+        # fpdf estándar necesita este encoding para tildes y ñ
         return str(texto).encode('latin-1', 'replace').decode('latin-1')
 
     pdf.cell(200, 7, txt=format_es(f"ID: {id_factura} | Fecha: {fecha}"), ln=True)
@@ -46,7 +47,7 @@ st.set_page_config(page_title="Xevytron 3D", page_icon=icon, layout="centered")
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
-# Revisar si la clave viene en la URL (?p=clave)
+# Truco: Si entras con ?p=tu_clave en la URL, te logueas solo
 if "p" in st.query_params and st.query_params["p"] == PASSWORD_APP:
     st.session_state.autenticado = True
 
@@ -119,12 +120,12 @@ if df_p is None:
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 
-# --- 7. NAVEGACIÓN ---
+# --- 7. NAVEGACIÓN (BOTÓN FACTURAS RECUPERADO) ---
 if 'seccion' not in st.session_state: st.session_state.seccion = "TRABAJOS"
 nav_cols = st.columns(4)
 if nav_cols[0].button("TRABAJOS"): st.session_state.seccion = "TRABAJOS"; st.rerun()
 if nav_cols[1].button("NUEVO"): st.session_state.seccion = "NUEVO TRABAJO"; st.rerun()
-if nav_cols[2].button("HISTORIAL"): st.session_state.seccion = "FACTURAS"; st.rerun()
+if nav_cols[2].button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun() # Nombre recuperado
 if nav_cols[3].button("📊"): st.session_state.seccion = "ESTADISTICAS"; st.rerun()
 st.divider()
 
@@ -186,7 +187,7 @@ if st.session_state.seccion == "TRABAJOS":
             st.download_button("PDF 📩", data=crear_pdf(id_job, row['Fecha'], row['Cliente'], row['Pieza'], float(row['Precio']), row['Notas']), file_name=f"F_{row['Cliente']}.pdf", key=f"pdf_v_{id_job}")
         st.divider()
 
-# --- 9. VISTA: NUEVO TRABAJO (FIXED KEY BUG) ---
+# --- 9. VISTA: NUEVO TRABAJO ---
 elif st.session_state.seccion == "NUEVO TRABAJO":
     st.markdown('<p class="titulo-seccion">Nuevo Trabajo</p>', unsafe_allow_html=True)
     
@@ -218,10 +219,16 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
             else:
                 st.error("⚠️ Debes rellenar el Cliente y la Pieza.")
 
-# --- 10. HISTORIAL ---
+# --- 10. HISTORIAL (FACTURAS) ---
 elif st.session_state.seccion == "FACTURAS":
-    st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
-    for i, row in df_f.sort_values(by="ID", ascending=True).iterrows():
+    st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
+    busqueda_fact = st.text_input("🔍 Buscar en historial...", placeholder="Nombre o pieza").lower()
+    
+    items_f = df_f.sort_values(by="ID", ascending=True)
+    if busqueda_fact:
+        items_f = items_f[items_f['Cliente'].str.lower().str.contains(busqueda_fact) | items_f['Pieza'].str.lower().str.contains(busqueda_fact)]
+        
+    for i, row in items_f.iterrows():
         with st.container():
             n_hist = str(row['Notas']).strip(); h_hist = f'<p class="card-nota">Notas: {n_hist}</p>' if n_hist else ""
             st.markdown(f"""<div class="card-container"><p class="card-fecha">{row['Fecha']} | ID: {row['ID']}</p><p class="card-nombre">{row['Cliente']}</p><p class="card-pieza">Pieza: {row['Pieza']}</p>{h_hist}<p class="card-precio">Precio: {row['Precio']:.2f} €</p></div>""", unsafe_allow_html=True)
