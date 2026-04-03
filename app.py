@@ -73,7 +73,7 @@ if logo_b64:
 # --- 3. ESTILOS CSS ---
 st.markdown("""
     <style>
-        html, body, [data-testid="stAppViewContainer"] { overflow-x: hidden !important; width: 100vw; }
+        html, body, [data-testid="stAppViewContainer"] { overflow-x: hidden !important; width: 100vw; margin: 0; padding: 0; }
         #MainMenu, footer, header, .stDeployButton { visibility: hidden; display: none; }
         .titulo-seccion { font-size: 20px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 15px; }
         .stButton button { width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; text-transform: uppercase; background-color: #343a40 !important; color: white !important; }
@@ -83,6 +83,9 @@ st.markdown("""
         .card-info { font-size: 14px; color: #333 !important; margin: 0; }
         [data-testid="stDownloadButton"] button, .stExpander > details > summary { height: 3.1rem; width: 100%; border-radius: 8px; background-color: #343a40 !important; color: white !important; margin-bottom: 8px; }
         [data-testid="stMetricValue"] { font-size: 24px !important; color: #6f42c1 !important; }
+        
+        /* Asegurar que las miniaturas no se pasen de ancho */
+        .stImage img { border-radius: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -117,7 +120,7 @@ if nav_cols[2].button("HISTORIAL"): st.session_state.seccion = "FACTURAS"; st.re
 if nav_cols[3].button("📊"): st.session_state.seccion = "ESTADISTICAS"; st.rerun()
 st.divider()
 
-# --- 6. VISTA: TRABAJOS ---
+# --- 6. VISTA: TRABAJOS (FOTOS AHORA COMO MINIATURAS) ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan o Casco").lower()
@@ -132,12 +135,12 @@ if st.session_state.seccion == "TRABAJOS":
         with st.container():
             st.markdown(f"""<div class="card-container"><p class="card-fecha">{r['Fecha']} | ID: {id_actual}</p><p class="card-nombre">{r['Cliente']}</p><p class="card-info">{r['Pieza']} | <b>{r['Precio']} €</b></p></div>""", unsafe_allow_html=True)
             
-            # Visualización de las 2 fotos si existen
-            c_img1, c_img2 = st.columns(2)
+            # Visualización de las 2 fotos como MINIATURAS (stack vertical)
+            # Hemos quitado las columnas y use_container_width, y forzado width=80
             if r['Imagen'] and len(str(r['Imagen'])) > 100:
-                c_img1.image(f"data:image/jpeg;base64,{r['Imagen']}", use_container_width=True)
+                st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=80)
             if r['Imagen2'] and len(str(r['Imagen2'])) > 100:
-                c_img2.image(f"data:image/jpeg;base64,{r['Imagen2']}", use_container_width=True)
+                st.image(f"data:image/jpeg;base64,{r['Imagen2']}", width=80)
 
             nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_actual}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
@@ -206,7 +209,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
             else:
                 st.error("Por favor, rellena el Cliente y la Pieza.")
 
-# --- 8. VISTA: HISTORIAL ---
+# --- 8. VISTA: HISTORIAL (MANTENEMOS LAS FOTOS ORIGINALES PARA VERLAS BIEN) ---
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
     busqueda_f = st.text_input("🔍 Buscar...", placeholder="Nombre o pieza...").lower()
