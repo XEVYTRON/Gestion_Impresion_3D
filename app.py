@@ -69,23 +69,34 @@ st.set_page_config(page_title="Xevytron 3D", page_icon=icon, layout="centered")
 if logo_b64:
     st.markdown(f'<head><link rel="apple-touch-icon" href="data:image/png;base64,{logo_b64}"></head>', unsafe_allow_html=True)
 
-# --- 3. ESTILOS CSS ---
+# --- 3. ESTILOS CSS (TARJETAS OPTIMIZADAS PARA MÓVIL) ---
 st.markdown("""
     <style>
         html, body, [data-testid="stAppViewContainer"] { overflow-x: hidden !important; width: 100vw; margin: 0; padding: 0; }
         #MainMenu, footer, header, .stDeployButton { visibility: hidden; display: none; }
         .titulo-seccion { font-size: 20px; font-weight: bold; text-align: center; text-transform: uppercase; margin-bottom: 15px; }
         .stButton button { width: 100%; height: 3rem; border-radius: 8px; font-weight: 600; text-transform: uppercase; background-color: #343a40 !important; color: white !important; }
-        .card-container { background-color: #ffffff !important; border-radius: 10px; padding: 12px; border: 1px solid #e0e0e0; border-left: 6px solid #6f42c1; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 10px; }
-        .card-fecha { font-size: 10px; color: #777 !important; margin: 0; text-transform: uppercase; }
-        .card-nombre { font-size: 18px; font-weight: 800; color: #6f42c1 !important; margin: 0; text-transform: uppercase; line-height: 1.2; }
-        .card-info { font-size: 14px; color: #333 !important; margin: 0; }
+        
+        .card-container { 
+            background-color: #ffffff !important; 
+            border-radius: 10px; padding: 15px; 
+            border: 1px solid #e0e0e0; 
+            border-left: 6px solid #6f42c1; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            margin-bottom: 10px;
+        }
+        .card-fecha { font-size: 10px; color: #777 !important; margin-bottom: 2px; text-transform: uppercase; }
+        .card-nombre { font-size: 18px; font-weight: 800; color: #6f42c1 !important; margin: 0; text-transform: uppercase; }
+        .card-pieza { font-size: 15px; color: #333 !important; font-weight: 600; margin-top: 4px; }
+        .card-nota { font-size: 13px; color: #555 !important; font-style: italic; margin-top: 2px; line-height: 1.2; }
+        .card-precio { font-size: 17px; color: #111 !important; font-weight: 900; margin-top: 8px; border-top: 1px solid #eee; pt: 5px; }
+
         [data-testid="stDownloadButton"] button, .stExpander > details > summary { height: 3.1rem; width: 100%; border-radius: 8px; background-color: #343a40 !important; color: white !important; margin-bottom: 8px; }
         [data-testid="stMetricValue"] { font-size: 24px !important; color: #6f42c1 !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. CONEXIÓN Y DATOS (CONVERSIÓN DE TIPOS FORZADA) ---
+# --- 4. CONEXIÓN Y DATOS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 if 'v_menu' not in st.session_state: st.session_state.v_menu = {}
 
@@ -95,23 +106,16 @@ def cargar_datos():
         p = conn.read(worksheet="Pedidos", ttl=0)
         f = conn.read(worksheet="Facturas", ttl=0)
         for df in [p, f]:
-            # Limpiar ID
             if 'ID' in df.columns:
                 df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False).str.strip()
-            
-            # FORZAR COLUMNAS DE TEXTO (Imágenes y Notas)
             for col in ['Notas', 'Imagen', 'Imagen2']:
                 if col in df.columns:
                     df[col] = df[col].astype(str).replace(['nan', 'None', '0', '0.0'], '')
-                else:
-                    df[col] = ""
-            
-            # FORZAR COLUMNAS NUMÉRICAS
+                else: df[col] = ""
             for col in ['Gramos', 'Horas', 'Precio']:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-                else:
-                    df[col] = 0.0
+                else: df[col] = 0.0
         return p, f
     except: return None, None
 
@@ -129,7 +133,7 @@ if nav_cols[2].button("HISTORIAL"): st.session_state.seccion = "FACTURAS"; st.re
 if nav_cols[3].button("📊"): st.session_state.seccion = "ESTADISTICAS"; st.rerun()
 st.divider()
 
-# --- 6. VISTA: TRABAJOS ---
+# --- 6. VISTA: TRABAJOS (ESTRUCTURA VERTICAL CORREGIDA) ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan o Casco").lower()
@@ -142,7 +146,16 @@ if st.session_state.seccion == "TRABAJOS":
         id_actual = str(r['ID'])
         ver = st.session_state.v_menu.get(id_actual, 0)
         with st.container():
-            st.markdown(f"""<div class="card-container"><p class="card-fecha">{r['Fecha']} | ID: {id_actual}</p><p class="card-nombre">{r['Cliente']}</p><p class="card-info">{r['Pieza']} | <b>{r['Precio']} €</b></p></div>""", unsafe_allow_html=True)
+            # NUEVA ESTRUCTURA DE TARJETA
+            st.markdown(f"""
+                <div class="card-container">
+                    <p class="card-fecha">{r['Fecha']} | ID: {id_actual}</p>
+                    <p class="card-nombre">{r['Cliente']}</p>
+                    <p class="card-pieza">Pieza: {r['Pieza']}</p>
+                    <p class="card-nota">{"Notas: " + r['Notas'] if r['Notas'] else ""}</p>
+                    <p class="card-precio">Precio: {r['Precio']} €</p>
+                </div>
+            """, unsafe_allow_html=True)
             
             if r['Imagen'] and len(str(r['Imagen'])) > 100:
                 st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=80)
@@ -165,8 +178,6 @@ if st.session_state.seccion == "TRABAJOS":
                     if st.form_submit_button("Ok"):
                         img1_64 = procesar_foto(u_img1) if u_img1 else r['Imagen']
                         img2_64 = procesar_foto(u_img2) if u_img2 else r['Imagen2']
-                        
-                        # Actualizar en Pedidos
                         idx_p = df_p[df_p['ID'].astype(str) == id_actual].index
                         if not idx_p.empty:
                             row_idx = idx_p[0]
@@ -174,11 +185,9 @@ if st.session_state.seccion == "TRABAJOS":
                             df_p.at[row_idx, 'Pieza'] = u_pie
                             df_p.at[row_idx, 'Precio'] = float(u_pre)
                             df_p.at[row_idx, 'Notas'] = u_not
-                            df_p.at[row_idx, 'Imagen'] = str(img1_64) # Forzamos a string
-                            df_p.at[row_idx, 'Imagen2'] = str(img2_64) # Forzamos a string
+                            df_p.at[row_idx, 'Imagen'] = str(img1_64)
+                            df_p.at[row_idx, 'Imagen2'] = str(img2_64)
                             conn.update(worksheet="Pedidos", data=df_p)
-                        
-                        # Actualizar en Facturas
                         idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
                         if not idx_f.empty:
                             f_row_idx = idx_f[0]
@@ -189,14 +198,11 @@ if st.session_state.seccion == "TRABAJOS":
                             df_f.at[f_row_idx, 'Imagen'] = str(img1_64)
                             df_f.at[f_row_idx, 'Imagen2'] = str(img2_64)
                             conn.update(worksheet="Facturas", data=df_f)
-                        
                         st.session_state.v_menu[id_actual] = ver + 1; st.cache_data.clear(); st.rerun()
-                
                 if st.button("🗑️ ELIMINAR", key=f"d_{id_actual}"):
                     df_p = df_p[df_p['ID'].astype(str) != id_actual]; conn.update(worksheet="Pedidos", data=df_p)
                     df_f = df_f[df_f['ID'].astype(str) != id_actual]; conn.update(worksheet="Facturas", data=df_f)
                     st.cache_data.clear(); st.rerun()
-            
             pdf_b = crear_pdf(id_actual, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'], r['Imagen2'])
             st.download_button("PDF 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_actual}")
         st.divider()
@@ -213,7 +219,6 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
         f_col1, f_col2 = st.columns(2)
         img_f1 = f_col1.file_uploader("Foto Referencia 1", type=['jpg', 'jpeg', 'png'])
         img_f2 = f_col2.file_uploader("Foto Referencia 2", type=['jpg', 'jpeg', 'png'])
-        
         if st.form_submit_button("GUARDAR TRABAJO"):
             if c_nom and p_nom:
                 total = ((0.024 * gr) + (hr * 1.0)) * (1 + mgn/100)
@@ -234,7 +239,15 @@ elif st.session_state.seccion == "FACTURAS":
         items_f = items_f[items_f['Cliente'].str.lower().str.contains(busqueda_f) | items_f['Pieza'].str.lower().str.contains(busqueda_f)]
     for i, r in items_f.iterrows():
         with st.container():
-            st.markdown(f"""<div class="card-container"><p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p><p class="card-nombre">{r['Cliente']}</p><p class="card-info">{r['Pieza']} - <b>{r['Precio']} €</b></p></div>""", unsafe_allow_html=True)
+            st.markdown(f"""
+                <div class="card-container">
+                    <p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p>
+                    <p class="card-nombre">{r['Cliente']}</p>
+                    <p class="card-pieza">Pieza: {r['Pieza']}</p>
+                    <p class="card-nota">{"Notas: " + r['Notas'] if r['Notas'] else ""}</p>
+                    <p class="card-precio">Precio: {r['Precio']} €</p>
+                </div>
+            """, unsafe_allow_html=True)
             c1, c2 = st.columns(2)
             if r['Imagen'] and len(str(r['Imagen'])) > 100: c1.image(f"data:image/jpeg;base64,{r['Imagen']}", use_container_width=True)
             if r['Imagen2'] and len(str(r['Imagen2'])) > 100: c2.image(f"data:image/jpeg;base64,{r['Imagen2']}", use_container_width=True)
