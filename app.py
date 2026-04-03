@@ -41,7 +41,6 @@ def crear_pdf(id_f, fecha, cli, pie, tot, nts="", img_b64="", img_b64_2=""):
         pdf.ln(2); pdf.set_font("Arial", 'I', 10)
         pdf.multi_cell(200, 6, txt=f"Notas: {nts}")
     
-    # Renderizado de imágenes en el PDF (una al lado de la otra)
     pdf.ln(5)
     y_inicial = pdf.get_y()
     if img_b64 and len(str(img_b64)) > 100:
@@ -83,13 +82,10 @@ st.markdown("""
         .card-info { font-size: 14px; color: #333 !important; margin: 0; }
         [data-testid="stDownloadButton"] button, .stExpander > details > summary { height: 3.1rem; width: 100%; border-radius: 8px; background-color: #343a40 !important; color: white !important; margin-bottom: 8px; }
         [data-testid="stMetricValue"] { font-size: 24px !important; color: #6f42c1 !important; }
-        
-        /* Asegurar que las miniaturas no se pasen de ancho */
-        .stImage img { border-radius: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. CONEXIÓN Y DATOS ---
+# --- 4. CONEXIÓN Y DATOS (CON INICIALIZACIÓN ROBUSTA) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 if 'v_menu' not in st.session_state: st.session_state.v_menu = {}
 
@@ -101,8 +97,11 @@ def cargar_datos():
         for df in [p, f]:
             if 'ID' in df.columns:
                 df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False).str.strip()
-            for col in ['Notas', 'Imagen', 'Imagen2', 'Gramos', 'Horas']:
-                if col not in df.columns: df[col] = 0 if col in ['Gramos', 'Horas'] else ""
+            # Asegurar que todas las columnas existan con el tipo correcto
+            for col in ['Notas', 'Imagen', 'Imagen2']:
+                if col not in df.columns: df[col] = ""
+            for col in ['Gramos', 'Horas', 'Precio']:
+                if col not in df.columns: df[col] = df[col].astype(float) if col in df.columns else 0.0
         return p, f
     except: return None, None
 
@@ -120,7 +119,7 @@ if nav_cols[2].button("HISTORIAL"): st.session_state.seccion = "FACTURAS"; st.re
 if nav_cols[3].button("📊"): st.session_state.seccion = "ESTADISTICAS"; st.rerun()
 st.divider()
 
-# --- 6. VISTA: TRABAJOS (FOTOS AHORA COMO MINIATURAS) ---
+# --- 6. VISTA: TRABAJOS ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan o Casco").lower()
@@ -135,8 +134,6 @@ if st.session_state.seccion == "TRABAJOS":
         with st.container():
             st.markdown(f"""<div class="card-container"><p class="card-fecha">{r['Fecha']} | ID: {id_actual}</p><p class="card-nombre">{r['Cliente']}</p><p class="card-info">{r['Pieza']} | <b>{r['Precio']} €</b></p></div>""", unsafe_allow_html=True)
             
-            # Visualización de las 2 fotos como MINIATURAS (stack vertical)
-            # Hemos quitado las columnas y use_container_width, y forzado width=80
             if r['Imagen'] and len(str(r['Imagen'])) > 100:
                 st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=80)
             if r['Imagen2'] and len(str(r['Imagen2'])) > 100:
@@ -144,7 +141,7 @@ if st.session_state.seccion == "TRABAJOS":
 
             nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_actual}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
-                df_p.loc[i, "Estado"] = nuevo_e
+                df_p.at[i, "Estado"] = nuevo_e
                 conn.update(worksheet="Pedidos", data=df_p); st.cache_data.clear(); st.rerun()
             
             with st.expander("MODIFICAR ⚙️", key=f"e_{id_actual}_{ver}"):
@@ -158,34 +155,50 @@ if st.session_state.seccion == "TRABAJOS":
                     if st.form_submit_button("Ok"):
                         img1_64 = procesar_foto(u_img1) if u_img1 else r['Imagen']
                         img2_64 = procesar_foto(u_img2) if u_img2 else r['Imagen2']
-                        df_p.loc[df_p['ID'].astype(str) == id_actual, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen', 'Imagen2']] = [u_cli, u_pie, u_pre, u_not, img1_64, img2_64]
-                        conn.update(worksheet="Pedidos", data=df_p)
+                        
+                        # SOLUCIÓN AL TYPEERROR: Actualizar por índice específico usando .at
+                        idx_p = df_p[df_p['ID'].astype(str) == id_actual].index
+                        if not idx_p.empty:
+                            row_idx = idx_p[0]
+                            df_p.at[row_idx, 'Cliente'] = u_cli
+                            df_p.at[row_idx, 'Pieza'] = u_pie
+                            df_p.at[row_idx, 'Precio'] = float(u_pre)
+                            df_p.at[row_idx, 'Notas'] = u_not
+                            df_p.at[row_idx, 'Imagen'] = img1_64
+                            df_p.at[row_idx, 'Imagen2'] = img2_64
+                            conn.update(worksheet="Pedidos", data=df_p)
+                        
                         idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
                         if not idx_f.empty:
-                            df_f.loc[idx_f, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen', 'Imagen2']] = [u_cli, u_pie, u_pre, u_not, img1_64, img2_64]
+                            f_row_idx = idx_f[0]
+                            df_f.at[f_row_idx, 'Cliente'] = u_cli
+                            df_f.at[f_row_idx, 'Pieza'] = u_pie
+                            df_f.at[f_row_idx, 'Precio'] = float(u_pre)
+                            df_f.at[f_row_idx, 'Notas'] = u_not
+                            df_f.at[f_row_idx, 'Imagen'] = img1_64
+                            df_f.at[f_row_idx, 'Imagen2'] = img2_64
                             conn.update(worksheet="Facturas", data=df_f)
+                        
                         st.session_state.v_menu[id_actual] = ver + 1; st.cache_data.clear(); st.rerun()
+                
                 if st.button("🗑️ ELIMINAR", key=f"d_{id_actual}"):
                     df_p = df_p[df_p['ID'].astype(str) != id_actual]; conn.update(worksheet="Pedidos", data=df_p)
                     df_f = df_f[df_f['ID'].astype(str) != id_actual]; conn.update(worksheet="Facturas", data=df_f)
                     st.cache_data.clear(); st.rerun()
+            
             pdf_b = crear_pdf(id_actual, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'], r['Imagen2'])
             st.download_button("PDF 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_actual}")
         st.divider()
 
-# --- 7. VISTA: NUEVO TRABAJO (2 FOTOS + AUTO-LIMPIEZA) ---
+# --- 7. VISTA: NUEVO TRABAJO ---
 elif st.session_state.seccion == "NUEVO TRABAJO":
     st.markdown('<p class="titulo-seccion">Nuevo Trabajo</p>', unsafe_allow_html=True)
     with st.form("form_nuevo_trabajo", clear_on_submit=True):
-        c_nom = st.text_input("Nombre Cliente")
-        p_nom = st.text_input("Pieza")
+        c_nom = st.text_input("Nombre Cliente"); p_nom = st.text_input("Pieza")
         ca, cb = st.columns(2)
-        gr = ca.number_input("Gramos", min_value=0.0)
-        hr = cb.number_input("Horas", min_value=0.0)
+        gr = ca.number_input("Gramos", min_value=0.0); hr = cb.number_input("Horas", min_value=0.0)
         mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200, 300], value=100)
         nts = st.text_area("Notas")
-        
-        # Dos campos de subida separados
         f_col1, f_col2 = st.columns(2)
         img_f1 = f_col1.file_uploader("Foto Referencia 1", type=['jpg', 'jpeg', 'png'])
         img_f2 = f_col2.file_uploader("Foto Referencia 2", type=['jpg', 'jpeg', 'png'])
@@ -193,23 +206,15 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
         if st.form_submit_button("GUARDAR TRABAJO"):
             if c_nom and p_nom:
                 total = ((0.024 * gr) + (hr * 1.0)) * (1 + mgn/100)
-                img1_64 = procesar_foto(img_f1)
-                img2_64 = procesar_foto(img_f2)
+                img1_64 = procesar_foto(img_f1); img2_64 = procesar_foto(img_f2)
                 id_u = datetime.now().strftime("%y%m%d%H%M%S")
-                row = pd.DataFrame([{
-                    "ID": id_u, "Fecha": datetime.now().strftime("%d/%m/%Y"), 
-                    "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", 
-                    "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts, 
-                    "Imagen": img1_64, "Imagen2": img2_64
-                }])
+                row = pd.DataFrame([{"ID": id_u, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts, "Imagen": img1_64, "Imagen2": img2_64}])
                 conn.update(worksheet="Pedidos", data=pd.concat([df_p, row], ignore_index=True))
                 conn.update(worksheet="Facturas", data=pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True))
-                st.cache_data.clear()
-                st.success(f"¡Guardado! Total: {total:.2f} €")
-            else:
-                st.error("Por favor, rellena el Cliente y la Pieza.")
+                st.cache_data.clear(); st.success(f"¡Guardado! Total: {total:.2f} €")
+            else: st.error("Rellena Cliente y Pieza.")
 
-# --- 8. VISTA: HISTORIAL (MANTENEMOS LAS FOTOS ORIGINALES PARA VERLAS BIEN) ---
+# --- 8. VISTA: HISTORIAL ---
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
     busqueda_f = st.text_input("🔍 Buscar...", placeholder="Nombre o pieza...").lower()
@@ -219,11 +224,9 @@ elif st.session_state.seccion == "FACTURAS":
     for i, r in items_f.iterrows():
         with st.container():
             st.markdown(f"""<div class="card-container"><p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p><p class="card-nombre">{r['Cliente']}</p><p class="card-info">{r['Pieza']} - <b>{r['Precio']} €</b></p></div>""", unsafe_allow_html=True)
-            
             c1, c2 = st.columns(2)
             if r['Imagen'] and len(str(r['Imagen'])) > 100: c1.image(f"data:image/jpeg;base64,{r['Imagen']}", use_container_width=True)
             if r['Imagen2'] and len(str(r['Imagen2'])) > 100: c2.image(f"data:image/jpeg;base64,{r['Imagen2']}", use_container_width=True)
-            
             pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'], r['Imagen2'])
             st.download_button("DESCARGAR 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"fpdf_{r['ID']}")
             if st.button("BORRAR 🗑️", key=f"fdel_{r['ID']}"):
@@ -234,12 +237,10 @@ elif st.session_state.seccion == "FACTURAS":
 # --- 9. VISTA: ESTADÍSTICAS ---
 elif st.session_state.seccion == "ESTADISTICAS":
     st.markdown('<p class="titulo-seccion">Dashboard VYE3D</p>', unsafe_allow_html=True)
-    if df_f.empty:
-        st.info("Aún no hay datos.")
-    else:
-        df_f['Precio'] = df_f['Precio'].astype(float)
-        df_f['Gramos'] = df_f['Gramos'].astype(float)
-        df_f['Horas'] = df_f['Horas'].astype(float)
+    if not df_f.empty:
+        df_f['Precio'] = pd.to_numeric(df_f['Precio'], errors='coerce')
+        df_f['Gramos'] = pd.to_numeric(df_f['Gramos'], errors='coerce')
+        df_f['Horas'] = pd.to_numeric(df_f['Horas'], errors='coerce')
         df_f['Fecha_DT'] = pd.to_datetime(df_f['Fecha'], format="%d/%m/%Y")
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Ventas", f"{df_f['Precio'].sum():.2f} €")
