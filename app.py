@@ -10,7 +10,7 @@ from io import BytesIO
 try:
     PASSWORD_APP = st.secrets["password"]
 except:
-    PASSWORD_APP = "xevy2024" 
+    PASSWORD_APP = "xevy2024"
 
 # --- 2. UTILIDADES DE PDF (SOPORTE CARACTERES ESPAÑOLES) ---
 def crear_pdf(id_factura, fecha, cliente, pieza, total, notas=""):
@@ -20,20 +20,19 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas=""):
     pdf.cell(200, 10, txt="XEVYTRON 3D - FACTURA", ln=True, align='C')
     pdf.ln(5)
     pdf.set_font("Arial", '', 11)
-    
+
     def format_es(texto):
         return str(texto).encode('latin-1', 'replace').decode('latin-1')
 
     pdf.cell(200, 7, txt=format_es(f"ID: {id_factura} | Fecha: {fecha}"), ln=True)
     pdf.cell(200, 7, txt=format_es(f"Cliente: {cliente}"), ln=True)
     pdf.cell(200, 7, txt=format_es(f"Trabajo: {pieza}"), ln=True)
-    
-    # Limpieza para el PDF
-    nota_pdf = str(notas).strip()
-    if nota_pdf and nota_pdf.lower() != 'nan' and nota_pdf != '0.0':
+
+    nota_limpia = str(notas) if notas and str(notas).lower() != 'nan' else ""
+    if nota_limpia.strip() != "":
         pdf.ln(2); pdf.set_font("Arial", 'I', 10)
-        pdf.multi_cell(200, 6, txt=format_es(f"Notas: {nota_pdf}"))
-    
+        pdf.multi_cell(200, 6, txt=format_es(f"Notas: {nota_limpia}"))
+
     pdf.ln(10); pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt=f"TOTAL: {total:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
@@ -43,7 +42,7 @@ try: icon = Image.open("image_7.png")
 except: icon = "🛠️"
 st.set_page_config(page_title="Xevytron 3D", page_icon=icon, layout="centered")
 
-# --- 4. ACCESO ---
+# --- 4. ACCESO (URL PARAMS + SESSION STATE) ---
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
@@ -74,30 +73,24 @@ st.markdown("""
         .card-pieza { font-size: 15px; color: #333 !important; font-weight: 600; margin-top: 4px; }
         .card-nota { font-size: 13px; color: #555 !important; font-style: italic; margin-top: 2px; line-height: 1.2; }
         .card-precio { font-size: 17px; color: #111 !important; font-weight: 900; margin-top: 8px; border-top: 1px solid #eee; padding-top: 5px; }
+        .stat-card { background-color: #f8f9fa; border-radius: 10px; padding: 12px 16px; border-left: 5px solid #6f42c1; margin-bottom: 8px; }
+        .stat-cliente { font-size: 15px; font-weight: 700; color: #343a40; }
+        .stat-detalle { font-size: 13px; color: #666; margin-top: 2px; }
+        .stat-total { font-size: 16px; font-weight: 900; color: #6f42c1; margin-top: 4px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 6. DATOS Y CONEXIÓN (FILTRO ANTI-NAN REFORZADO) ---
+# --- 6. DATOS Y CONEXIÓN ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def limpiar_y_formatear(df, con_estado=False):
     columnas_requeridas = ['ID', 'Fecha', 'Cliente', 'Pieza', 'Precio', 'Gramos', 'Horas', 'Notas']
     if con_estado: columnas_requeridas.append('Estado')
-    
-    # 1. Asegurar columnas
     for col in columnas_requeridas:
         if col not in df.columns: df[col] = ""
-    
     df = df[columnas_requeridas].copy()
-    
-    # 2. LIMPIEZA AGRESIVA DE NAN
-    df['Notas'] = df['Notas'].fillna('').astype(str)
-    df['Notas'] = df['Notas'].replace(['nan', 'NaN', 'None', 'null', '0.0', '0'], '')
-    # Filtro final por si acaso
-    df['Notas'] = df['Notas'].apply(lambda x: "" if str(x).lower().strip() == "nan" else x)
-    
     df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False).str.strip()
-    
+    df['Notas'] = df['Notas'].astype(str).replace(['nan', 'None', 'NaN', 'null', '0.0'], '')
     for num_col in ['Precio', 'Gramos', 'Horas']:
         df[num_col] = pd.to_numeric(df[num_col], errors='coerce').fillna(0.0)
     return df
@@ -105,10 +98,11 @@ def limpiar_y_formatear(df, con_estado=False):
 @st.cache_data(ttl=2)
 def cargar_datos_completos():
     try:
-        p_raw = conn.read(worksheet="Pedidos", ttl=0)
-        f_raw = conn.read(worksheet="Facturas", ttl=0)
-        return limpiar_y_formatear(p_raw, True), limpiar_y_formatear(f_raw, False)
-    except: return None, None
+        pedidos_raw = conn.read(worksheet="Pedidos", ttl=0)
+        facturas_raw = conn.read(worksheet="Facturas", ttl=0)
+        return limpiar_y_formatear(pedidos_raw, True), limpiar_y_formatear(facturas_raw, False)
+    except:
+        return None, None
 
 if 'df_pedidos' not in st.session_state: st.session_state.df_pedidos = None
 if 'df_facturas' not in st.session_state: st.session_state.df_facturas = None
@@ -117,10 +111,12 @@ if 'form_reset_key' not in st.session_state: st.session_state.form_reset_key = 0
 if st.session_state.df_pedidos is None:
     st.session_state.df_pedidos, st.session_state.df_facturas = cargar_datos_completos()
 
-df_p, df_f = st.session_state.df_pedidos, st.session_state.df_facturas
+df_p = st.session_state.df_pedidos
+df_f = st.session_state.df_facturas
 
 if df_p is None:
-    st.error("⚠️ Error de conexión."); st.stop()
+    st.error("⚠️ No se pudo conectar con Google Sheets.")
+    st.stop()
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 
@@ -136,114 +132,214 @@ st.divider()
 # --- 8. VISTA: TRABAJOS ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
-    f_nom = st.text_input("🔍 Buscar...", placeholder="Cliente o pieza").lower()
-    
-    try: est_act = st.pills("Estado:", ESTADOS, default="Pendiente")
-    except: est_act = st.selectbox("Estado:", ESTADOS)
+    filtro_nombre = st.text_input("🔍 Buscar...", placeholder="Cliente o pieza").lower()
 
-    items = df_p[df_p["Estado"] == est_act].sort_values(by="ID", ascending=True)
-    if f_nom:
-        items = items[items['Cliente'].str.lower().str.contains(f_nom) | items['Pieza'].str.lower().str.contains(f_nom)]
-    
+    try: estado_actual = st.pills("Estado:", ESTADOS, default="Pendiente")
+    except: estado_actual = st.selectbox("Estado:", ESTADOS)
+
+    items = df_p[df_p["Estado"] == estado_actual].sort_values(by="ID", ascending=True)
+    if filtro_nombre:
+        items = items[
+            items['Cliente'].str.lower().str.contains(filtro_nombre) |
+            items['Pieza'].str.lower().str.contains(filtro_nombre)
+        ]
+
     for i, row in items.iterrows():
         id_job = str(row['ID'])
         with st.container():
-            # FILTRO VISUAL ANTI-NAN
-            raw_nota = str(row['Notas']).strip()
-            txt_nota = raw_nota if raw_nota.lower() != "nan" and raw_nota != "" else ""
-            h_nota = f'<p class="card-nota">Notas: {txt_nota}</p>' if txt_nota else ""
-            
-            st.markdown(f"""<div class="card-container"><p class="card-fecha">{row['Fecha']} | ID: {id_job}</p><p class="card-nombre">{row['Cliente']}</p><p class="card-pieza">Pieza: {row['Pieza']}</p>{h_not if 'h_not' in locals() else h_nota}<p class="card-precio">Precio: {row['Precio']:.2f} €</p></div>""", unsafe_allow_html=True)
-            
-            upd_est = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(row['Estado']), key=f"st_{id_job}")
-            if upd_est != row['Estado']:
-                df_p.at[i, "Estado"] = upd_est
+            txt_nota = str(row['Notas']).strip()
+            html_nota = f'<p class="card-nota">Notas: {txt_nota}</p>' if txt_nota else ""
+            st.markdown(f"""<div class="card-container">
+                <p class="card-fecha">{row['Fecha']} | ID: {id_job}</p>
+                <p class="card-nombre">{row['Cliente']}</p>
+                <p class="card-pieza">Pieza: {row['Pieza']}</p>
+                {html_nota}
+                <p class="card-precio">Precio: {row['Precio']:.2f} €</p>
+            </div>""", unsafe_allow_html=True)
+
+            update_estado = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(row['Estado']), key=f"status_{id_job}")
+            if update_estado != row['Estado']:
+                df_p.at[i, "Estado"] = update_estado
                 conn.update(worksheet="Pedidos", data=df_p)
-                st.session_state.df_pedidos = df_p; st.rerun()
-            
+                st.session_state.df_pedidos = df_p
+                st.rerun()
+
             with st.expander("MODIFICAR ⚙️"):
-                with st.form(f"fm_{id_job}"):
-                    e_cli = st.text_input("Cliente", value=row['Cliente'])
-                    e_pie = st.text_input("Pieza", value=row['Pieza'])
-                    e_pre = st.number_input("Precio", value=float(row['Precio']))
-                    e_not = st.text_area("Notas", value=txt_nota)
+                with st.form(f"f_mod_{id_job}"):
+                    c_edit = st.text_input("Cliente", value=row['Cliente'])
+                    p_edit = st.text_input("Pieza", value=row['Pieza'])
+                    pr_edit = st.number_input("Precio", value=float(row['Precio']))
+                    n_edit = st.text_area("Notas", value=txt_nota)
                     if st.form_submit_button("Guardar"):
-                        df_p.loc[df_p['ID'].astype(str) == id_job, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [e_cli, e_pie, e_pre, str(e_not).strip()]
-                        df_f.loc[df_f['ID'].astype(str) == id_job, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [e_cli, e_pie, e_pre, str(e_not).strip()]
-                        conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f)
-                        st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f; st.rerun()
+                        df_p.loc[df_p['ID'].astype(str) == id_job, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [c_edit, p_edit, pr_edit, str(n_edit).strip()]
+                        df_f.loc[df_f['ID'].astype(str) == id_job, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [c_edit, p_edit, pr_edit, str(n_edit).strip()]
+                        conn.update(worksheet="Pedidos", data=df_p)
+                        conn.update(worksheet="Facturas", data=df_f)
+                        st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f
+                        st.rerun()
 
                 # BORRADO SEGURO
-                c_key = f"dk_{id_job}"
-                if c_key not in st.session_state: st.session_state[c_key] = False
-                if not st.session_state[c_key]:
-                    if st.button("🗑️ ELIMINAR", key=f"bd_{id_job}"):
-                        st.session_state[c_key] = True; st.rerun()
+                confirm_key = f"del_ask_{id_job}"
+                if confirm_key not in st.session_state: st.session_state[confirm_key] = False
+                if not st.session_state[confirm_key]:
+                    if st.button("🗑️ ELIMINAR", key=f"btn_del_{id_job}"):
+                        st.session_state[confirm_key] = True; st.rerun()
                 else:
                     st.warning("¿Seguro?")
                     b1, b2 = st.columns(2)
-                    if b1.button("SÍ ✅", key=f"cs_{id_job}"):
+                    if b1.button("SÍ ✅", key=f"confirm_ok_{id_job}"):
                         df_p = df_p[df_p['ID'].astype(str) != id_job]
                         df_f = df_f[df_f['ID'].astype(str) != id_job]
-                        conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f)
+                        conn.update(worksheet="Pedidos", data=df_p)
+                        conn.update(worksheet="Facturas", data=df_f)
                         st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f
-                        st.session_state[c_key] = False; st.rerun()
-                    if b2.button("NO ❌", key=f"cn_{id_job}"):
-                        st.session_state[c_key] = False; st.rerun()
+                        st.session_state[confirm_key] = False; st.rerun()
+                    if b2.button("NO ❌", key=f"confirm_no_{id_job}"):
+                        st.session_state[confirm_key] = False; st.rerun()
 
-            st.download_button("PDF 📩", data=crear_pdf(id_job, row['Fecha'], row['Cliente'], row['Pieza'], float(row['Precio']), row['Notas']), file_name=f"F_{row['Cliente']}.pdf", key=f"pb_{id_job}")
+            st.download_button(
+                "PDF 📩",
+                data=crear_pdf(id_job, row['Fecha'], row['Cliente'], row['Pieza'], float(row['Precio']), row['Notas']),
+                file_name=f"F_{row['Cliente']}.pdf",
+                key=f"pdf_v_{id_job}"
+            )
         st.divider()
 
 # --- 9. VISTA: NUEVO TRABAJO ---
 elif st.session_state.seccion == "NUEVO TRABAJO":
     st.markdown('<p class="titulo-seccion">Nuevo Trabajo</p>', unsafe_allow_html=True)
-    with st.container(key=f"cn_{st.session_state.form_reset_key}"):
-        n_cli = st.text_input("Cliente", key=f"ic_{st.session_state.form_reset_key}")
-        n_pie = st.text_input("Pieza", key=f"ip_{st.session_state.form_reset_key}")
-        cg, ch = st.columns(2)
-        gms = cg.number_input("Gramos", min_value=0.0, key=f"ig_{st.session_state.form_reset_key}")
-        hrs = ch.number_input("Horas", min_value=0.0, key=f"ih_{st.session_state.form_reset_key}")
-        mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200, 300], value=100, key=f"im_{st.session_state.form_reset_key}")
-        
-        p_fin = ((0.024 * gms) + (hrs * 1.0)) * (1 + mgn/100)
-        st.markdown(f"### TOTAL ESTIMADO: {p_fin:.2f} €")
-        n_not = st.text_area("Notas", key=f"in_{st.session_state.form_reset_key}")
-        
+
+    with st.container(key=f"cont_new_{st.session_state.form_reset_key}"):
+        nuevo_cliente = st.text_input("Nombre del Cliente", key=f"input_cli_{st.session_state.form_reset_key}")
+        nueva_pieza = st.text_input("Nombre de la Pieza", key=f"input_pie_{st.session_state.form_reset_key}")
+        col_g, col_h = st.columns(2)
+        gramos = col_g.number_input("Gramos", min_value=0.0, key=f"input_gr_{st.session_state.form_reset_key}")
+        horas = col_h.number_input("Horas", min_value=0.0, key=f"input_hr_{st.session_state.form_reset_key}")
+        margen = st.select_slider("Margen %", options=[0, 50, 100, 150, 200, 300], value=100, key=f"input_mg_{st.session_state.form_reset_key}")
+
+        precio_final = ((0.024 * gramos) + (horas * 1.0)) * (1 + margen / 100)
+        st.markdown(f"### TOTAL ESTIMADO: {precio_final:.2f} €")
+        nuevas_notas = st.text_area("Notas", key=f"input_nt_{st.session_state.form_reset_key}")
+
         if st.button("GUARDAR TRABAJO"):
-            if n_cli and n_pie:
-                id_n = datetime.now().strftime("%y%m%d%H%M%S")
-                r_n = pd.DataFrame([{"ID": id_n, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": n_cli, "Pieza": n_pie, "Estado": "Pendiente", "Precio": p_fin, "Gramos": gms, "Horas": hrs, "Notas": str(n_not).strip()}])
-                df_p = pd.concat([df_p, r_n], ignore_index=True)
-                df_f = pd.concat([df_f, r_n.drop(columns=['Estado'])], ignore_index=True)
-                conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f)
+            if nuevo_cliente and nueva_pieza:
+                id_nuevo = datetime.now().strftime("%y%m%d%H%M%S")
+                row_new = pd.DataFrame([{
+                    "ID": id_nuevo, "Fecha": datetime.now().strftime("%d/%m/%Y"),
+                    "Cliente": nuevo_cliente, "Pieza": nueva_pieza, "Estado": "Pendiente",
+                    "Precio": precio_final, "Gramos": gramos, "Horas": horas,
+                    "Notas": str(nuevas_notas).strip()
+                }])
+                df_p = pd.concat([df_p, row_new], ignore_index=True)
+                df_f = pd.concat([df_f, row_new.drop(columns=['Estado'])], ignore_index=True)
+                conn.update(worksheet="Pedidos", data=df_p)
+                conn.update(worksheet="Facturas", data=df_f)
                 st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f
                 st.session_state.form_reset_key += 1; st.rerun()
-            else: st.error("⚠️ Rellena Cliente y Pieza.")
+            else:
+                st.error("⚠️ Debes rellenar el Cliente y la Pieza.")
 
-# --- 10. FACTURAS ---
+# --- 10. HISTORIAL (CON FILTRO POR FECHAS) ---
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
-    b_fac = st.text_input("🔍 Buscar...", placeholder="Nombre o pieza").lower()
-    items_f = df_f.sort_values(by="ID", ascending=True)
-    if b_fac:
-        items_f = items_f[items_f['Cliente'].str.lower().str.contains(b_fac) | items_f['Pieza'].str.lower().str.contains(b_fac)]
-        
+
+    # Búsqueda por nombre
+    busqueda_fact = st.text_input("🔍 Buscar...", placeholder="Nombre o pieza").lower()
+
+    # Filtro por fechas
+    df_f_fechas = df_f.copy()
+    df_f_fechas['Fecha_DT'] = pd.to_datetime(df_f_fechas['Fecha'], format="%d/%m/%Y", errors='coerce')
+    df_f_fechas = df_f_fechas.dropna(subset=['Fecha_DT'])
+
+    if not df_f_fechas.empty:
+        fecha_min = df_f_fechas['Fecha_DT'].min().date()
+        fecha_max = df_f_fechas['Fecha_DT'].max().date()
+
+        col_f1, col_f2 = st.columns(2)
+        desde = col_f1.date_input("Desde", value=fecha_min, min_value=fecha_min, max_value=fecha_max)
+        hasta = col_f2.date_input("Hasta", value=fecha_max, min_value=fecha_min, max_value=fecha_max)
+
+        items_f = df_f_fechas[
+            (df_f_fechas['Fecha_DT'].dt.date >= desde) &
+            (df_f_fechas['Fecha_DT'].dt.date <= hasta)
+        ].sort_values(by="ID", ascending=True)
+    else:
+        items_f = df_f.sort_values(by="ID", ascending=True)
+
+    if busqueda_fact:
+        items_f = items_f[
+            items_f['Cliente'].str.lower().str.contains(busqueda_fact) |
+            items_f['Pieza'].str.lower().str.contains(busqueda_fact)
+        ]
+
+    # Total del período filtrado
+    if not items_f.empty:
+        total_filtrado = items_f['Precio'].sum()
+        st.info(f"📦 {len(items_f)} facturas — Total: **{total_filtrado:.2f} €**")
+
     for i, row in items_f.iterrows():
         with st.container():
-            # FILTRO ANTI-NAN HISTORIAL
-            rn_h = str(row['Notas']).strip()
-            tn_h = rn_h if rn_h.lower() != "nan" and rn_h != "" else ""
-            hn_h = f'<p class="card-nota">Notas: {tn_h}</p>' if tn_h else ""
-            
-            st.markdown(f"""<div class="card-container"><p class="card-fecha">{row['Fecha']} | ID: {row['ID']}</p><p class="card-nombre">{row['Cliente']}</p><p class="card-pieza">Pieza: {row['Pieza']}</p>{hn_h}<p class="card-precio">Precio: {row['Precio']:.2f} €</p></div>""", unsafe_allow_html=True)
-            pdf_h = crear_pdf(row['ID'], row['Fecha'], row['Cliente'], row['Pieza'], float(row['Precio']), row['Notas'])
-            st.download_button("PDF 📩", data=pdf_h, file_name=f"F_{row['Cliente']}.pdf", key=f"ph_{row['ID']}")
+            n_hist = str(row['Notas']).strip()
+            h_hist = f'<p class="card-nota">Notas: {n_hist}</p>' if n_hist else ""
+            st.markdown(f"""<div class="card-container">
+                <p class="card-fecha">{row['Fecha']} | ID: {row['ID']}</p>
+                <p class="card-nombre">{row['Cliente']}</p>
+                <p class="card-pieza">Pieza: {row['Pieza']}</p>
+                {h_hist}
+                <p class="card-precio">Precio: {row['Precio']:.2f} €</p>
+            </div>""", unsafe_allow_html=True)
+            pdf_data = crear_pdf(row['ID'], row['Fecha'], row['Cliente'], row['Pieza'], float(row['Precio']), row['Notas'])
+            st.download_button("PDF 📩", data=pdf_data, file_name=f"F_{row['Cliente']}.pdf", key=f"btn_pdf_f_{row['ID']}")
             st.divider()
 
-# --- 11. ESTADÍSTICAS ---
+# --- 11. ESTADÍSTICAS (CON RANKING POR CLIENTE) ---
 elif st.session_state.seccion == "ESTADISTICAS":
     st.markdown('<p class="titulo-seccion">Dashboard</p>', unsafe_allow_html=True)
+
     if not df_f.empty:
-        st.metric("Total Ventas", f"{df_f['Precio'].sum():.2f} €")
-        df_f['Fecha_DT'] = pd.to_datetime(df_f['Fecha'], format="%d/%m/%Y")
-        st.bar_chart(df_f.set_index('Fecha_DT').resample('M')['Precio'].sum())
+        df_stats = df_f.copy()
+        df_stats['Precio'] = pd.to_numeric(df_stats['Precio'], errors='coerce').fillna(0.0)
+        df_stats['Fecha_DT'] = pd.to_datetime(df_stats['Fecha'], format="%d/%m/%Y", errors='coerce')
+
+        # --- MÉTRICAS GLOBALES ---
+        total_ventas = df_stats['Precio'].sum()
+        total_pedidos = len(df_stats)
+        ticket_medio = total_ventas / total_pedidos if total_pedidos > 0 else 0
+
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("💶 Total Ventas", f"{total_ventas:.2f} €")
+        col_m2.metric("📦 Nº Trabajos", total_pedidos)
+        col_m3.metric("🎯 Ticket Medio", f"{ticket_medio:.2f} €")
+
+        st.divider()
+
+        # --- GRÁFICO POR MES ---
+        st.markdown("**Ventas por mes**")
+        ventas_mes = df_stats.dropna(subset=['Fecha_DT']).set_index('Fecha_DT').resample('M')['Precio'].sum()
+        st.bar_chart(ventas_mes)
+
+        st.divider()
+
+        # --- RANKING POR CLIENTE ---
+        st.markdown("**Ranking de clientes**")
+        ranking = (
+            df_stats.groupby('Cliente')
+            .agg(
+                Total=('Precio', 'sum'),
+                Trabajos=('Precio', 'count'),
+                Ticket_Medio=('Precio', 'mean')
+            )
+            .sort_values('Total', ascending=False)
+            .reset_index()
+        )
+
+        for _, r in ranking.iterrows():
+            st.markdown(f"""
+                <div class="stat-card">
+                    <p class="stat-cliente">👤 {r['Cliente']}</p>
+                    <p class="stat-detalle">{int(r['Trabajos'])} trabajo(s) · Ticket medio: {r['Ticket_Medio']:.2f} €</p>
+                    <p class="stat-total">Total: {r['Total']:.2f} €</p>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("Aún no hay facturas registradas.")
