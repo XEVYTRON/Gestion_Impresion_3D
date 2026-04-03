@@ -7,7 +7,7 @@ from PIL import Image
 import base64
 from io import BytesIO
 
-# --- 1. UTILIDADES DE IMAGEN Y PDF (ULTRA COMPRESIÓN) ---
+# --- 1. UTILIDADES DE IMAGEN Y PDF ---
 def get_base64_logo(path):
     try:
         img = Image.open(path)
@@ -133,15 +133,13 @@ if nav_cols[2].button("HISTORIAL"): st.session_state.seccion = "FACTURAS"; st.re
 if nav_cols[3].button("📊"): st.session_state.seccion = "ESTADISTICAS"; st.rerun()
 st.divider()
 
-# --- 6. VISTA: TRABAJOS (ORDENADOS: PRIMERO CREADO, PRIMERO EN VERSE) ---
+# --- 6. VISTA: TRABAJOS (CRONOLÓGICO) ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
     busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan").lower()
     filtro_estado = st.pills("Estado:", ESTADOS, default="Pendiente")
     
-    # Filtramos y ordenamos cronológicamente (ID ascendente)
     items = df_p[df_p["Estado"] == filtro_estado].sort_values(by="ID", ascending=True)
-    
     if busqueda:
         items = items[items['Cliente'].str.lower().str.contains(busqueda) | items['Pieza'].str.lower().str.contains(busqueda)]
     
@@ -177,8 +175,8 @@ if st.session_state.seccion == "TRABAJOS":
                     u_pie = st.text_input("Pieza", value=r['Pieza'])
                     u_pre = st.number_input("Precio", value=float(r['Precio']))
                     u_not = st.text_area("Notas", value=r['Notas'])
-                    u_img1 = st.file_uploader("Cambiar Foto 1", type=['jpg', 'jpeg', 'png'])
-                    u_img2 = st.file_uploader("Cambiar Foto 2", type=['jpg', 'jpeg', 'png'])
+                    u_img1 = st.file_uploader("Foto 1", type=['jpg', 'jpeg', 'png'])
+                    u_img2 = st.file_uploader("Foto 2", type=['jpg', 'jpeg', 'png'])
                     if st.form_submit_button("Ok"):
                         img1_64 = procesar_foto(u_img1) if u_img1 else r['Imagen']
                         img2_64 = procesar_foto(u_img2) if u_img2 else r['Imagen2']
@@ -189,7 +187,7 @@ if st.session_state.seccion == "TRABAJOS":
                             df_p.at[row_idx, 'Pieza'] = u_pie
                             df_p.at[row_idx, 'Precio'] = float(u_pre)
                             df_p.at[row_idx, 'Notas'] = u_not
-                            df_p.at[row_idx, 'Imagen'] = str(img11_64) if 'img11_64' in locals() else str(img1_64)
+                            df_p.at[row_idx, 'Imagen'] = str(img1_64)
                             df_p.at[row_idx, 'Imagen2'] = str(img2_64)
                             conn.update(worksheet="Pedidos", data=df_p)
                         idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
@@ -211,24 +209,94 @@ if st.session_state.seccion == "TRABAJOS":
             st.download_button("PDF 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_actual}")
         st.divider()
 
-# --- 7. VISTA: NUEVO TRABAJO ---
+# --- 7. VISTA: NUEVO TRABAJO (PRECIO REAL-TIME + AUTO-LIMPIEZA) ---
 elif st.session_state.seccion == "NUEVO TRABAJO":
     st.markdown('<p class="titulo-seccion">Nuevo Trabajo</p>', unsafe_allow_html=True)
-    with st.form("form_nuevo_trabajo", clear_on_submit=True):
-        c_nom = st.text_input("Nombre Cliente"); p_nom = st.text_input("Pieza")
-        ca, cb = st.columns(2)
-        gr = ca.number_input("Gramos", min_value=0.0); hr = cb.number_input("Horas", min_value=0.0)
-        mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200, 300], value=100)
-        nts = st.text_area("Notas")
-        f_col1, f_col2 = st.columns(2)
-        img_f1 = f_col1.file_uploader("Foto 1", type=['jpg', 'jpeg', 'png'])
-        img_f2 = f_col2.file_uploader("Foto 2", type=['jpg', 'jpeg', 'png'])
-        if st.form_submit_button("GUARDAR TRABAJO"):
-            if c_nom and p_nom:
-                total = ((0.024 * gr) + (hr * 1.0)) * (1 + mgn/100)
-                img1_64 = str(procesar_foto(img_f1)); img2_64 = str(procesar_foto(img_f2))
-                id_u = datetime.now().strftime("%y%m%d%H%M%S")
-                row = pd.DataFrame([{"ID": id_u, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts, "Imagen": img1_64, "Imagen2": img2_64}])
-                conn.update(worksheet="Pedidos", data=pd.concat([df_p, row], ignore_index=True))
-                conn.update(worksheet="Facturas", data=pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True))
-                st.cache_data.clear(); st
+    
+    # Entradas con claves para poder resetearlas
+    c_nom = st.text_input("Nombre Cliente", key="new_cli")
+    p_nom = st.text_input("Pieza", key="new_pieza")
+    ca, cb = st.columns(2)
+    gr = ca.number_input("Gramos", min_value=0.0, key="new_gr")
+    hr = cb.number_input("Horas", min_value=0.0, key="new_hr")
+    mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200, 300], value=100, key="new_mgn")
+    
+    # CÁLCULO EN TIEMPO REAL (Vuelve a aparecer)
+    total_preview = ((0.024 * gr) + (hr * 1.0)) * (1 + mgn/100)
+    st.markdown(f"### TOTAL ESTIMADO: {total_preview:.2f} €")
+    
+    nts = st.text_area("Notas", key="new_nts")
+    f_col1, f_col2 = st.columns(2)
+    img_f1 = f_col1.file_uploader("Foto 1", type=['jpg', 'jpeg', 'png'], key="new_img1")
+    img_f2 = f_col2.file_uploader("Foto 2", type=['jpg', 'jpeg', 'png'], key="new_img2")
+    
+    if st.button("GUARDAR TRABAJO"):
+        if c_nom and p_nom:
+            img1_64 = str(procesar_foto(img_f1))
+            img2_64 = str(procesar_foto(img_f2))
+            id_u = datetime.now().strftime("%y%m%d%H%M%S")
+            row = pd.DataFrame([{
+                "ID": id_u, "Fecha": datetime.now().strftime("%d/%m/%Y"), 
+                "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", 
+                "Precio": total_preview, "Gramos": gr, "Horas": hr, "Notas": nts, 
+                "Imagen": img1_64, "Imagen2": img2_64
+            }])
+            conn.update(worksheet="Pedidos", data=pd.concat([df_p, row], ignore_index=True))
+            conn.update(worksheet="Facturas", data=pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True))
+            
+            # LIMPIEZA MANUAL AL GUARDAR
+            for k in ["new_cli", "new_pieza", "new_gr", "new_hr", "new_nts"]:
+                st.session_state[k] = "" if isinstance(st.session_state[k], str) else 0.0
+            st.session_state["new_mgn"] = 100
+            
+            st.cache_data.clear()
+            st.success(f"¡Guardado con éxito!")
+            st.rerun()
+        else:
+            st.error("Rellena Cliente y Pieza.")
+
+# --- 8. VISTA: HISTORIAL (CRONOLÓGICO) ---
+elif st.session_state.seccion == "FACTURAS":
+    st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
+    busqueda_f = st.text_input("🔍 Buscar...", placeholder="Ej: Juan").lower()
+    items_f = df_f.sort_values(by="ID", ascending=True)
+    if busqueda_f:
+        items_f = items_f[items_f['Cliente'].str.lower().str.contains(busqueda_f) | items_f['Pieza'].str.lower().str.contains(busqueda_f)]
+    for i, r in items_f.iterrows():
+        with st.container():
+            nota_texto_f = f"Notas: {r['Notas']}" if r['Notas'] else ""
+            st.markdown(f"""
+                <div class="card-container">
+                    <p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p>
+                    <p class="card-nombre">{r['Cliente']}</p>
+                    <p class="card-pieza">Pieza: {r['Pieza']}</p>
+                    <p class="card-nota">{nota_texto_f}</p>
+                    <p class="card-precio">Precio: {r['Precio']} €</p>
+                </div>
+            """, unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            if r['Imagen'] and len(str(r['Imagen'])) > 100: c1.image(f"data:image/jpeg;base64,{r['Imagen']}", use_container_width=True)
+            if r['Imagen2'] and len(str(r['Imagen2'])) > 100: c2.image(f"data:image/jpeg;base64,{r['Imagen2']}", use_container_width=True)
+            pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'], r['Imagen2'])
+            st.download_button("DESCARGAR 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"fpdf_{r['ID']}")
+            if st.button("BORRAR 🗑️", key=f"fdel_{r['ID']}"):
+                df_f_upd = df_f[df_f['ID'].astype(str) != str(r['ID'])]
+                conn.update(worksheet="Facturas", data=df_f_upd); st.cache_data.clear(); st.rerun()
+            st.divider()
+
+# --- 9. VISTA: ESTADÍSTICAS ---
+elif st.session_state.seccion == "ESTADISTICAS":
+    st.markdown('<p class="titulo-seccion">Dashboard VYE3D</p>', unsafe_allow_html=True)
+    if not df_f.empty:
+        df_f['Precio'] = pd.to_numeric(df_f['Precio'], errors='coerce')
+        df_f['Gramos'] = pd.to_numeric(df_f['Gramos'], errors='coerce')
+        df_f['Horas'] = pd.to_numeric(df_f['Horas'], errors='coerce')
+        df_f['Fecha_DT'] = pd.to_datetime(df_f['Fecha'], format="%d/%m/%Y")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Ventas", f"{df_f['Precio'].sum():.2f} €")
+        m2.metric("Gramos Usados", f"{df_f['Gramos'].sum()/1000:.2f} Kg")
+        m3.metric("Horas Totales", f"{df_f['Horas'].sum():.0f} h")
+        st.divider()
+        st.subheader("📈 Ventas Mensuales")
+        ventas_mes = df_f.set_index('Fecha_DT').resample('M')['Precio'].sum()
+        st.bar_chart(ventas_mes)
