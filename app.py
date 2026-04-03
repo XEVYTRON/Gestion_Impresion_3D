@@ -7,7 +7,7 @@ from PIL import Image
 import base64
 from io import BytesIO
 
-# --- 1. UTILIDADES DE IMAGEN Y PDF ---
+# --- 1. UTILIDADES DE IMAGEN Y PDF (ULTRA COMPRESIÓN) ---
 def get_base64_logo(path):
     try:
         img = Image.open(path)
@@ -20,9 +20,10 @@ def procesar_foto(file):
     if file:
         try:
             img = Image.open(file).convert("RGB")
-            img.thumbnail((200, 200))
+            # Reducimos a 150px para evitar el error de API de Google (Payload too large)
+            img.thumbnail((150, 150))
             buf = BytesIO()
-            img.save(buf, format="JPEG", quality=50)
+            img.save(buf, format="JPEG", quality=40) # Calidad 40% para aligerar el Excel
             return base64.b64encode(buf.getvalue()).decode()
         except: return ""
     return ""
@@ -45,15 +46,15 @@ def crear_pdf(id_f, fecha, cli, pie, tot, nts="", img_b64="", img_b64_2=""):
     y_inicial = pdf.get_y()
     if img_b64 and len(str(img_b64)) > 100:
         try:
-            pdf.image(BytesIO(base64.b64decode(img_b64)), x=10, y=y_inicial, w=45)
+            pdf.image(BytesIO(base64.b64decode(img_b64)), x=10, y=y_inicial, w=40)
         except: pass
     if img_b64_2 and len(str(img_b64_2)) > 100:
         try:
-            pdf.image(BytesIO(base64.b64decode(img_b64_2)), x=60, y=y_inicial, w=45)
+            pdf.image(BytesIO(base64.b64decode(img_b64_2)), x=55, y=y_inicial, w=40)
         except: pass
     
     if (img_b64 and len(str(img_b64)) > 100) or (img_b64_2 and len(str(img_b64_2)) > 100):
-        pdf.set_y(y_inicial + 50)
+        pdf.set_y(y_inicial + 45)
 
     pdf.ln(5); pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt=f"TOTAL: {tot:.2f} Euros", ln=True)
@@ -136,7 +137,7 @@ st.divider()
 # --- 6. VISTA: TRABAJOS ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
-    busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan o Casco").lower()
+    busqueda = st.text_input("🔍 Buscar cliente o pieza...", placeholder="Ej: Juan").lower()
     filtro_estado = st.pills("Estado:", ESTADOS, default="Pendiente")
     items = df_p[df_p["Estado"] == filtro_estado]
     if busqueda:
@@ -146,7 +147,6 @@ if st.session_state.seccion == "TRABAJOS":
         id_actual = str(r['ID'])
         ver = st.session_state.v_menu.get(id_actual, 0)
         with st.container():
-            # CORRECCIÓN LÍNEA 155: Usamos f-strings para evitar TypeErrors
             nota_texto = f"Notas: {r['Notas']}" if r['Notas'] else ""
             st.markdown(f"""
                 <div class="card-container">
@@ -158,10 +158,12 @@ if st.session_state.seccion == "TRABAJOS":
                 </div>
             """, unsafe_allow_html=True)
             
+            # Miniaturas pequeñas para ahorrar memoria visual
+            c_img_a, c_img_b = st.columns(2)
             if r['Imagen'] and len(str(r['Imagen'])) > 100:
-                st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=80)
+                c_img_a.image(f"data:image/jpeg;base64,{r['Imagen']}", width=70)
             if r['Imagen2'] and len(str(r['Imagen2'])) > 100:
-                st.image(f"data:image/jpeg;base64,{r['Imagen2']}", width=80)
+                c_img_b.image(f"data:image/jpeg;base64,{r['Imagen2']}", width=70)
 
             nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_actual}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
@@ -218,8 +220,8 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
         mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200, 300], value=100)
         nts = st.text_area("Notas")
         f_col1, f_col2 = st.columns(2)
-        img_f1 = f_col1.file_uploader("Foto Referencia 1", type=['jpg', 'jpeg', 'png'])
-        img_f2 = f_col2.file_uploader("Foto Referencia 2", type=['jpg', 'jpeg', 'png'])
+        img_f1 = f_col1.file_uploader("Foto 1", type=['jpg', 'jpeg', 'png'])
+        img_f2 = f_col2.file_uploader("Foto 2", type=['jpg', 'jpeg', 'png'])
         if st.form_submit_button("GUARDAR TRABAJO"):
             if c_nom and p_nom:
                 total = ((0.024 * gr) + (hr * 1.0)) * (1 + mgn/100)
@@ -234,13 +236,12 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
 # --- 8. VISTA: HISTORIAL ---
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial</p>', unsafe_allow_html=True)
-    busqueda_f = st.text_input("🔍 Buscar...", placeholder="Nombre o pieza...").lower()
+    busqueda_f = st.text_input("🔍 Buscar...", placeholder="Ej: Juan").lower()
     items_f = df_f.iloc[::-1]
     if busqueda_f:
         items_f = items_f[items_f['Cliente'].str.lower().str.contains(busqueda_f) | items_f['Pieza'].str.lower().str.contains(busqueda_f)]
     for i, r in items_f.iterrows():
         with st.container():
-            # CORRECCIÓN TAMBIÉN AQUÍ:
             nota_texto_f = f"Notas: {r['Notas']}" if r['Notas'] else ""
             st.markdown(f"""
                 <div class="card-container">
@@ -252,8 +253,8 @@ elif st.session_state.seccion == "FACTURAS":
                 </div>
             """, unsafe_allow_html=True)
             c1, c2 = st.columns(2)
-            if r['Imagen'] and len(str(r['Imagen'])) > 100: c1.image(f"data:image/jpeg;base64,{r['Imagen']}", use_container_width=True)
-            if r['Imagen2'] and len(str(r['Imagen2'])) > 100: c2.image(f"data:image/jpeg;base64,{r['Imagen2']}", use_container_width=True)
+            if r['Imagen'] and len(str(r['Imagen'])) > 100: c1.image(f"data:image/jpeg;base64,{r['Imagen']}", width=70)
+            if r['Imagen2'] and len(str(r['Imagen2'])) > 100: c2.image(f"data:image/jpeg;base64,{r['Imagen2']}", width=70)
             pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'], r['Imagen2'])
             st.download_button("DESCARGAR 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"fpdf_{r['ID']}")
             if st.button("BORRAR 🗑️", key=f"fdel_{r['ID']}"):
