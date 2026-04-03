@@ -27,7 +27,7 @@ def procesar_foto(file):
         except: return ""
     return ""
 
-def crear_pdf(id_f, fecha, cli, pie, tot, nts="", img_b64=""):
+def crear_pdf(id_f, fecha, cli, pie, tot, nts="", img_b64="", img_b64_2=""):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
@@ -40,11 +40,22 @@ def crear_pdf(id_f, fecha, cli, pie, tot, nts="", img_b64=""):
     if nts:
         pdf.ln(2); pdf.set_font("Arial", 'I', 10)
         pdf.multi_cell(200, 6, txt=f"Notas: {nts}")
+    
+    # Renderizado de imágenes en el PDF (una al lado de la otra)
+    pdf.ln(5)
+    y_inicial = pdf.get_y()
     if img_b64 and len(str(img_b64)) > 100:
         try:
-            img_raw = base64.b64decode(img_b64)
-            pdf.ln(5); pdf.image(BytesIO(img_raw), w=50); pdf.ln(5)
+            pdf.image(BytesIO(base64.b64decode(img_b64)), x=10, y=y_inicial, w=45)
         except: pass
+    if img_b64_2 and len(str(img_b64_2)) > 100:
+        try:
+            pdf.image(BytesIO(base64.b64decode(img_b64_2)), x=60, y=y_inicial, w=45)
+        except: pass
+    
+    if (img_b64 and len(str(img_b64)) > 100) or (img_b64_2 and len(str(img_b64_2)) > 100):
+        pdf.set_y(y_inicial + 50)
+
     pdf.ln(5); pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt=f"TOTAL: {tot:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
@@ -87,7 +98,7 @@ def cargar_datos():
         for df in [p, f]:
             if 'ID' in df.columns:
                 df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False).str.strip()
-            for col in ['Notas', 'Imagen', 'Gramos', 'Horas']:
+            for col in ['Notas', 'Imagen', 'Imagen2', 'Gramos', 'Horas']:
                 if col not in df.columns: df[col] = 0 if col in ['Gramos', 'Horas'] else ""
         return p, f
     except: return None, None
@@ -120,41 +131,48 @@ if st.session_state.seccion == "TRABAJOS":
         ver = st.session_state.v_menu.get(id_actual, 0)
         with st.container():
             st.markdown(f"""<div class="card-container"><p class="card-fecha">{r['Fecha']} | ID: {id_actual}</p><p class="card-nombre">{r['Cliente']}</p><p class="card-info">{r['Pieza']} | <b>{r['Precio']} €</b></p></div>""", unsafe_allow_html=True)
+            
+            # Visualización de las 2 fotos si existen
+            c_img1, c_img2 = st.columns(2)
             if r['Imagen'] and len(str(r['Imagen'])) > 100:
-                st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=150)
+                c_img1.image(f"data:image/jpeg;base64,{r['Imagen']}", use_container_width=True)
+            if r['Imagen2'] and len(str(r['Imagen2'])) > 100:
+                c_img2.image(f"data:image/jpeg;base64,{r['Imagen2']}", use_container_width=True)
+
             nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_actual}", label_visibility="collapsed")
             if nuevo_e != r['Estado']:
                 df_p.loc[i, "Estado"] = nuevo_e
                 conn.update(worksheet="Pedidos", data=df_p); st.cache_data.clear(); st.rerun()
+            
             with st.expander("MODIFICAR ⚙️", key=f"e_{id_actual}_{ver}"):
-                with st.form(f"f_ed_{id_actual}_{ver}"): # Formulario para editar
+                with st.form(f"f_ed_{id_actual}_{ver}"):
                     u_cli = st.text_input("Cliente", value=r['Cliente'])
                     u_pie = st.text_input("Pieza", value=r['Pieza'])
                     u_pre = st.number_input("Precio", value=float(r['Precio']))
                     u_not = st.text_area("Notas", value=r['Notas'])
-                    u_img = st.file_uploader("Nueva Foto", type=['jpg', 'jpeg', 'png'])
+                    u_img1 = st.file_uploader("Cambiar Foto 1", type=['jpg', 'jpeg', 'png'])
+                    u_img2 = st.file_uploader("Cambiar Foto 2", type=['jpg', 'jpeg', 'png'])
                     if st.form_submit_button("Ok"):
-                        img_64 = procesar_foto(u_img) if u_img else r['Imagen']
-                        df_p.loc[df_p['ID'].astype(str) == id_actual, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
+                        img1_64 = procesar_foto(u_img1) if u_img1 else r['Imagen']
+                        img2_64 = procesar_foto(u_img2) if u_img2 else r['Imagen2']
+                        df_p.loc[df_p['ID'].astype(str) == id_actual, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen', 'Imagen2']] = [u_cli, u_pie, u_pre, u_not, img1_64, img2_64]
                         conn.update(worksheet="Pedidos", data=df_p)
                         idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
                         if not idx_f.empty:
-                            df_f.loc[idx_f, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen']] = [u_cli, u_pie, u_pre, u_not, img_64]
+                            df_f.loc[idx_f, ['Cliente', 'Pieza', 'Precio', 'Notas', 'Imagen', 'Imagen2']] = [u_cli, u_pie, u_pre, u_not, img1_64, img2_64]
                             conn.update(worksheet="Facturas", data=df_f)
                         st.session_state.v_menu[id_actual] = ver + 1; st.cache_data.clear(); st.rerun()
                 if st.button("🗑️ ELIMINAR", key=f"d_{id_actual}"):
                     df_p = df_p[df_p['ID'].astype(str) != id_actual]; conn.update(worksheet="Pedidos", data=df_p)
                     df_f = df_f[df_f['ID'].astype(str) != id_actual]; conn.update(worksheet="Facturas", data=df_f)
                     st.cache_data.clear(); st.rerun()
-            pdf_b = crear_pdf(id_actual, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'])
+            pdf_b = crear_pdf(id_actual, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'], r['Imagen2'])
             st.download_button("PDF 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_actual}")
         st.divider()
 
-# --- 7. VISTA: NUEVO TRABAJO (MEJORADA CON AUTO-LIMPIEZA) ---
+# --- 7. VISTA: NUEVO TRABAJO (2 FOTOS + AUTO-LIMPIEZA) ---
 elif st.session_state.seccion == "NUEVO TRABAJO":
     st.markdown('<p class="titulo-seccion">Nuevo Trabajo</p>', unsafe_allow_html=True)
-    
-    # Usamos st.form con clear_on_submit para que se vacíe al terminar
     with st.form("form_nuevo_trabajo", clear_on_submit=True):
         c_nom = st.text_input("Nombre Cliente")
         p_nom = st.text_input("Pieza")
@@ -162,28 +180,29 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
         gr = ca.number_input("Gramos", min_value=0.0)
         hr = cb.number_input("Horas", min_value=0.0)
         mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200, 300], value=100)
-        
-        # Cálculo de precio informativo (dentro del form no se actualiza en tiempo real al escribir)
-        # pero para que lo veas antes de guardar:
         nts = st.text_area("Notas")
-        img_f = st.file_uploader("Subir Imagen", type=['jpg', 'jpeg', 'png'])
         
-        # El botón de guardado ahora es de tipo submit
+        # Dos campos de subida separados
+        f_col1, f_col2 = st.columns(2)
+        img_f1 = f_col1.file_uploader("Foto Referencia 1", type=['jpg', 'jpeg', 'png'])
+        img_f2 = f_col2.file_uploader("Foto Referencia 2", type=['jpg', 'jpeg', 'png'])
+        
         if st.form_submit_button("GUARDAR TRABAJO"):
             if c_nom and p_nom:
                 total = ((0.024 * gr) + (hr * 1.0)) * (1 + mgn/100)
-                img_64 = procesar_foto(img_f)
+                img1_64 = procesar_foto(img_f1)
+                img2_64 = procesar_foto(img_f2)
                 id_u = datetime.now().strftime("%y%m%d%H%M%S")
                 row = pd.DataFrame([{
                     "ID": id_u, "Fecha": datetime.now().strftime("%d/%m/%Y"), 
                     "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", 
-                    "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts, "Imagen": img_64
+                    "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts, 
+                    "Imagen": img1_64, "Imagen2": img2_64
                 }])
                 conn.update(worksheet="Pedidos", data=pd.concat([df_p, row], ignore_index=True))
                 conn.update(worksheet="Facturas", data=pd.concat([df_f, row.drop(columns=['Estado'])], ignore_index=True))
                 st.cache_data.clear()
                 st.success(f"¡Guardado! Total: {total:.2f} €")
-                # No hacemos st.rerun() aquí para que el mensaje de éxito se vea un segundo
             else:
                 st.error("Por favor, rellena el Cliente y la Pieza.")
 
@@ -197,8 +216,12 @@ elif st.session_state.seccion == "FACTURAS":
     for i, r in items_f.iterrows():
         with st.container():
             st.markdown(f"""<div class="card-container"><p class="card-fecha">{r['Fecha']} | ID: {r['ID']}</p><p class="card-nombre">{r['Cliente']}</p><p class="card-info">{r['Pieza']} - <b>{r['Precio']} €</b></p></div>""", unsafe_allow_html=True)
-            if r['Imagen'] and len(str(r['Imagen'])) > 100: st.image(f"data:image/jpeg;base64,{r['Imagen']}", width=100)
-            pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'])
+            
+            c1, c2 = st.columns(2)
+            if r['Imagen'] and len(str(r['Imagen'])) > 100: c1.image(f"data:image/jpeg;base64,{r['Imagen']}", use_container_width=True)
+            if r['Imagen2'] and len(str(r['Imagen2'])) > 100: c2.image(f"data:image/jpeg;base64,{r['Imagen2']}", use_container_width=True)
+            
+            pdf_b = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Imagen'], r['Imagen2'])
             st.download_button("DESCARGAR 📩", data=pdf_b, file_name=f"F_{r['Cliente']}.pdf", key=f"fpdf_{r['ID']}")
             if st.button("BORRAR 🗑️", key=f"fdel_{r['ID']}"):
                 df_f_upd = df_f[df_f['ID'].astype(str) != str(r['ID'])]
