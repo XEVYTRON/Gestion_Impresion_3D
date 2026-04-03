@@ -85,7 +85,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. CONEXIÓN Y DATOS (CON INICIALIZACIÓN ROBUSTA) ---
+# --- 4. CONEXIÓN Y DATOS (CONVERSIÓN DE TIPOS FORZADA) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 if 'v_menu' not in st.session_state: st.session_state.v_menu = {}
 
@@ -95,13 +95,23 @@ def cargar_datos():
         p = conn.read(worksheet="Pedidos", ttl=0)
         f = conn.read(worksheet="Facturas", ttl=0)
         for df in [p, f]:
+            # Limpiar ID
             if 'ID' in df.columns:
                 df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False).str.strip()
-            # Asegurar que todas las columnas existan con el tipo correcto
+            
+            # FORZAR COLUMNAS DE TEXTO (Imágenes y Notas)
             for col in ['Notas', 'Imagen', 'Imagen2']:
-                if col not in df.columns: df[col] = ""
+                if col in df.columns:
+                    df[col] = df[col].astype(str).replace(['nan', 'None', '0', '0.0'], '')
+                else:
+                    df[col] = ""
+            
+            # FORZAR COLUMNAS NUMÉRICAS
             for col in ['Gramos', 'Horas', 'Precio']:
-                if col not in df.columns: df[col] = df[col].astype(float) if col in df.columns else 0.0
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+                else:
+                    df[col] = 0.0
         return p, f
     except: return None, None
 
@@ -156,7 +166,7 @@ if st.session_state.seccion == "TRABAJOS":
                         img1_64 = procesar_foto(u_img1) if u_img1 else r['Imagen']
                         img2_64 = procesar_foto(u_img2) if u_img2 else r['Imagen2']
                         
-                        # SOLUCIÓN AL TYPEERROR: Actualizar por índice específico usando .at
+                        # Actualizar en Pedidos
                         idx_p = df_p[df_p['ID'].astype(str) == id_actual].index
                         if not idx_p.empty:
                             row_idx = idx_p[0]
@@ -164,10 +174,11 @@ if st.session_state.seccion == "TRABAJOS":
                             df_p.at[row_idx, 'Pieza'] = u_pie
                             df_p.at[row_idx, 'Precio'] = float(u_pre)
                             df_p.at[row_idx, 'Notas'] = u_not
-                            df_p.at[row_idx, 'Imagen'] = img1_64
-                            df_p.at[row_idx, 'Imagen2'] = img2_64
+                            df_p.at[row_idx, 'Imagen'] = str(img1_64) # Forzamos a string
+                            df_p.at[row_idx, 'Imagen2'] = str(img2_64) # Forzamos a string
                             conn.update(worksheet="Pedidos", data=df_p)
                         
+                        # Actualizar en Facturas
                         idx_f = df_f[df_f['ID'].astype(str) == id_actual].index
                         if not idx_f.empty:
                             f_row_idx = idx_f[0]
@@ -175,8 +186,8 @@ if st.session_state.seccion == "TRABAJOS":
                             df_f.at[f_row_idx, 'Pieza'] = u_pie
                             df_f.at[f_row_idx, 'Precio'] = float(u_pre)
                             df_f.at[f_row_idx, 'Notas'] = u_not
-                            df_f.at[f_row_idx, 'Imagen'] = img1_64
-                            df_f.at[f_row_idx, 'Imagen2'] = img2_64
+                            df_f.at[f_row_idx, 'Imagen'] = str(img1_64)
+                            df_f.at[f_row_idx, 'Imagen2'] = str(img2_64)
                             conn.update(worksheet="Facturas", data=df_f)
                         
                         st.session_state.v_menu[id_actual] = ver + 1; st.cache_data.clear(); st.rerun()
@@ -206,7 +217,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
         if st.form_submit_button("GUARDAR TRABAJO"):
             if c_nom and p_nom:
                 total = ((0.024 * gr) + (hr * 1.0)) * (1 + mgn/100)
-                img1_64 = procesar_foto(img_f1); img2_64 = procesar_foto(img_f2)
+                img1_64 = str(procesar_foto(img_f1)); img2_64 = str(procesar_foto(img_f2))
                 id_u = datetime.now().strftime("%y%m%d%H%M%S")
                 row = pd.DataFrame([{"ID": id_u, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": c_nom, "Pieza": p_nom, "Estado": "Pendiente", "Precio": total, "Gramos": gr, "Horas": hr, "Notas": nts, "Imagen": img1_64, "Imagen2": img2_64}])
                 conn.update(worksheet="Pedidos", data=pd.concat([df_p, row], ignore_index=True))
