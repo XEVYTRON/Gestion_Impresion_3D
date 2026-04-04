@@ -108,7 +108,7 @@ if st.session_state.df_pedidos is None:
     st.session_state.df_pedidos, st.session_state.df_facturas = cargar_todo()
 
 df_p, df_f = st.session_state.df_pedidos, st.session_state.df_facturas
-if df_p is None: st.error("Error de conexión con Google Sheets."); st.stop()
+if df_p is None: st.error("Error de conexión."); st.stop()
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 
@@ -121,35 +121,33 @@ if n_cols[2].button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun
 if n_cols[3].button("📊"): st.session_state.seccion = "ESTADISTICAS"; st.rerun()
 st.divider()
 
-# --- 8. VISTA: TRABAJOS (CORREGIDO) ---
+# --- 8. VISTA: TRABAJOS (BUSCADOR EXCLUSIVO DE NOMBRES) ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Gestión de Trabajos</p>', unsafe_allow_html=True)
     
-    # Buscador Global
-    texto_buscar = st.text_input("🔍 Buscador Global (busca en cualquier estado)", value="").lower().strip()
+    # Buscador de Nombres
+    texto_buscar = st.text_input("🔍 Buscar Cliente o Pieza...", value="").lower().strip()
 
     if texto_buscar:
-        st.info(f"Mostrando resultados para: **{texto_buscar}**")
-        # Filtramos en todo df_p sin importar el estado
+        st.info(f"Filtrando nombres por: **{texto_buscar}**")
+        # BUSQUEDA EXCLUSIVA EN COLUMNAS DE NOMBRE
         mask = (
             df_p['Cliente'].astype(str).str.lower().str.contains(texto_buscar, na=False) |
             df_p['Pieza'].astype(str).str.lower().str.contains(texto_buscar, na=False)
         )
         items_mostrar = df_p[mask].sort_values(by="ID", ascending=False)
     else:
-        # Pestañas normales
         try: est_sel = st.pills("Estado:", ESTADOS, default="Pendiente")
         except: est_sel = st.selectbox("Estado:", ESTADOS)
         items_mostrar = df_p[df_p["Estado"] == est_sel].sort_values(by="ID", ascending=False)
 
     if items_mostrar.empty:
-        st.warning("No se encontraron trabajos.")
+        st.warning("No se encontraron coincidencias en nombres.")
 
     for idx, r in items_mostrar.iterrows():
         id_j = str(r['ID'])
         with st.container():
             n_t = str(r['Notas']).strip()
-            # Badge de estado solo si estamos buscando
             badge = f'<div class="badge-estado">{r["Estado"]}</div>' if texto_buscar else ""
             html_n = f'<p class="card-nota">Notas: {n_t}</p>' if n_t else ""
             
@@ -162,9 +160,9 @@ if st.session_state.seccion == "TRABAJOS":
                 <p class="card-precio">Precio: {r['Precio']:.2f} €</p>
             </div>""", unsafe_allow_html=True)
 
-            nuevo_e = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_j}")
-            if nuevo_e != r['Estado']:
-                df_p.at[idx, "Estado"] = nuevo_e
+            upd_est = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_j}")
+            if upd_est != r['Estado']:
+                df_p.at[idx, "Estado"] = upd_est
                 conn.update(worksheet="Pedidos", data=df_p)
                 st.session_state.df_pedidos = df_p; st.rerun()
             
@@ -176,7 +174,7 @@ if st.session_state.seccion == "TRABAJOS":
                     en = st.text_area("Notas", value=n_t)
                     if st.form_submit_button("Guardar"):
                         df_p.loc[df_p['ID'].astype(str) == id_j, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [ec, ep, epr, str(en).strip()]
-                        df_f.loc[df_f['ID'].astype(str) == id_j, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [ec, ep, epr, str(en).strip()]
+                        df_f.loc[df_f['ID'].astype(str) == id_job, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [ec, ep, epr, str(en).strip()]
                         conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f)
                         st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f; st.rerun()
 
@@ -228,7 +226,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
 # --- 10. FACTURAS ---
 elif st.session_state.seccion == "FACTURAS":
     st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
-    bf = st.text_input("🔍 Buscar...", placeholder="Nombre o pieza").lower()
+    bf = st.text_input("🔍 Buscar Nombre o Pieza...", placeholder="Ej: Juan...").lower()
     df_f_f = df_f.copy()
     df_f_f['Fecha_DT'] = pd.to_datetime(df_f_f['Fecha'], format="%d/%m/%Y", errors='coerce')
     df_f_f = df_f_f.dropna(subset=['Fecha_DT'])
@@ -239,6 +237,7 @@ elif st.session_state.seccion == "FACTURAS":
         items_f = df_f_f[(df_f_f['Fecha_DT'].dt.date >= d) & (df_f_f['Fecha_DT'].dt.date <= h)].sort_values(by="ID", ascending=False)
     else: items_f = df_f.sort_values(by="ID", ascending=False)
     if bf:
+        # FILTRO EXCLUSIVO EN FACTURAS
         items_f = items_f[items_f['Cliente'].str.lower().str.contains(bf, na=False) | items_f['Pieza'].str.lower().str.contains(bf, na=False)]
     for i, r in items_f.iterrows():
         with st.container():
