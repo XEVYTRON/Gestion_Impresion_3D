@@ -28,8 +28,8 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas=""):
     pdf.cell(200, 7, txt=format_es(f"Cliente: {cliente}"), ln=True)
     pdf.cell(200, 7, txt=format_es(f"Trabajo: {pieza}"), ln=True)
 
-    nota_limpia = str(notas).strip() if notas and str(notas).lower() != 'nan' else ""
-    if nota_limpia != "":
+    nota_limpia = str(notas).strip()
+    if nota_limpia and nota_limpia.lower() != 'nan':
         pdf.ln(2); pdf.set_font("Arial", 'I', 10)
         pdf.multi_cell(200, 6, txt=format_es(f"Notas: {nota_limpia}"))
 
@@ -87,7 +87,11 @@ def limpiar_df(df, con_estado=False):
         if c not in df.columns: df[c] = ""
     df = df[cols].copy()
     df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False).str.strip()
+    
+    # LIMPIEZA DE "COSAS RARAS" (HTML y nan)
     df['Notas'] = df['Notas'].astype(str).replace(['nan', 'NaN', 'None', 'null', '0.0'], '')
+    df['Notas'] = df['Notas'].str.split('<p').str[0] # Corta cualquier HTML colado
+    
     for n in ['Precio', 'Gramos', 'Horas']:
         df[n] = pd.to_numeric(df[n], errors='coerce').fillna(0.0)
     return df
@@ -121,82 +125,74 @@ if n_cols[2].button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rerun
 if n_cols[3].button("📊"): st.session_state.seccion = "ESTADISTICAS"; st.rerun()
 st.divider()
 
-# --- 8. VISTA: TRABAJOS (BUSCADOR EXCLUSIVO DE NOMBRES) ---
+# --- 8. VISTA: TRABAJOS ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Gestión de Trabajos</p>', unsafe_allow_html=True)
-    
-    # Buscador de Nombres
     texto_buscar = st.text_input("🔍 Buscar Cliente o Pieza...", value="").lower().strip()
 
     if texto_buscar:
-        st.info(f"Filtrando nombres por: **{texto_buscar}**")
-        # BUSQUEDA EXCLUSIVA EN COLUMNAS DE NOMBRE
-        mask = (
-            df_p['Cliente'].astype(str).str.lower().str.contains(texto_buscar, na=False) |
-            df_p['Pieza'].astype(str).str.lower().str.contains(texto_buscar, na=False)
-        )
+        mask = (df_p['Cliente'].astype(str).str.lower().str.contains(texto_buscar, na=False) |
+                df_p['Pieza'].astype(str).str.lower().str.contains(texto_buscar, na=False))
         items_mostrar = df_p[mask].sort_values(by="ID", ascending=False)
     else:
         try: est_sel = st.pills("Estado:", ESTADOS, default="Pendiente")
         except: est_sel = st.selectbox("Estado:", ESTADOS)
         items_mostrar = df_p[df_p["Estado"] == est_sel].sort_values(by="ID", ascending=False)
 
-    if items_mostrar.empty:
-        st.warning("No se encontraron coincidencias en nombres.")
-
     for idx, r in items_mostrar.iterrows():
-        id_j = str(r['ID'])
+        id_job = str(r['ID'])
         with st.container():
-            n_t = str(r['Notas']).strip()
+            n_limpia = str(r['Notas']).strip()
             badge = f'<div class="badge-estado">{r["Estado"]}</div>' if texto_buscar else ""
-            html_n = f'<p class="card-nota">Notas: {n_t}</p>' if n_t else ""
+            html_n = f'<p class="card-nota">Notas: {n_limpia}</p>' if n_limpia else ""
             
             st.markdown(f"""<div class="card-container">
                 {badge}
-                <p class="card-fecha">{r['Fecha']} | ID: {id_j}</p>
+                <p class="card-fecha">{r['Fecha']} | ID: {id_job}</p>
                 <p class="card-nombre">{r['Cliente']}</p>
                 <p class="card-pieza">Pieza: {r['Pieza']}</p>
                 {html_n}
                 <p class="card-precio">Precio: {r['Precio']:.2f} €</p>
             </div>""", unsafe_allow_html=True)
 
-            upd_est = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_j}")
+            upd_est = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_job}")
             if upd_est != r['Estado']:
                 df_p.at[idx, "Estado"] = upd_est
                 conn.update(worksheet="Pedidos", data=df_p)
                 st.session_state.df_pedidos = df_p; st.rerun()
             
             with st.expander("MODIFICAR ⚙️"):
-                with st.form(f"fm_{id_j}"):
+                with st.form(f"fm_{id_job}"):
                     ec = st.text_input("Cliente", value=r['Cliente'])
                     ep = st.text_input("Pieza", value=r['Pieza'])
                     epr = st.number_input("Precio", value=float(r['Precio']))
-                    en = st.text_area("Notas", value=n_t)
+                    en = st.text_area("Notas", value=n_limpia)
                     if st.form_submit_button("Guardar"):
-                        df_p.loc[df_p['ID'].astype(str) == id_j, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [ec, ep, epr, str(en).strip()]
+                        # AQUÍ ESTABA EL BUG: Unificamos a id_job
+                        df_p.loc[df_p['ID'].astype(str) == id_job, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [ec, ep, epr, str(en).strip()]
                         df_f.loc[df_f['ID'].astype(str) == id_job, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [ec, ep, epr, str(en).strip()]
                         conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f)
                         st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f; st.rerun()
 
-                # BORRADO
-                ck = f"dk_{id_j}"
+                # BORRADO SEGURO
+                ck = f"dk_{id_job}"
                 if ck not in st.session_state: st.session_state[ck] = False
                 if not st.session_state[ck]:
-                    if st.button("🗑️ ELIMINAR", key=f"bd_{id_j}"):
+                    if st.button("🗑️ ELIMINAR", key=f"bd_{id_job}"):
                         st.session_state[ck] = True; st.rerun()
                 else:
-                    st.warning("¿Seguro?")
+                    st.warning("¿Borrar?")
                     b1, b2 = st.columns(2)
-                    if b1.button("SÍ ✅", key=f"cs_{id_j}"):
-                        df_p = df_p[df_p['ID'].astype(str) != id_j]
-                        df_f = df_f[df_f['ID'].astype(str) != id_j]
+                    if b1.button("SÍ ✅", key=f"cs_{id_job}"):
+                        df_p = df_p[df_p['ID'].astype(str) != id_job]
+                        df_f = df_f[df_f['ID'].astype(str) != id_job]
                         conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f)
                         st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f
                         st.session_state[ck] = False; st.rerun()
-                    if b2.button("NO ❌", key=f"cn_{id_j}"):
+                    if b2.button("NO ❌", key=f"cn_{id_job}"):
                         st.session_state[ck] = False; st.rerun()
 
-            st.download_button("PDF 📩", data=crear_pdf(id_j, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas']), file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_j}")
+            st.download_button("PDF 📩", data=crear_pdf(id_job, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas']), file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_job}")
         st.divider()
 
 # --- 9. VISTA: NUEVO TRABAJO ---
@@ -212,7 +208,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
         pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + mgn/100)
         st.markdown(f"### TOTAL: {pf:.2f} €")
         nn = st.text_area("Notas", key=f"in_{st.session_state.form_reset_key}")
-        if st.button("GUARDAR TRABAJO"):
+        if st.button("GUARDAR"):
             if nc and np:
                 id_n = datetime.now().strftime("%y%m%d%H%M%S")
                 row = pd.DataFrame([{"ID": id_n, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": nc, "Pieza": np, "Estado": "Pendiente", "Precio": pf, "Gramos": gms, "Horas": hrs, "Notas": str(nn).strip()}])
@@ -237,7 +233,6 @@ elif st.session_state.seccion == "FACTURAS":
         items_f = df_f_f[(df_f_f['Fecha_DT'].dt.date >= d) & (df_f_f['Fecha_DT'].dt.date <= h)].sort_values(by="ID", ascending=False)
     else: items_f = df_f.sort_values(by="ID", ascending=False)
     if bf:
-        # FILTRO EXCLUSIVO EN FACTURAS
         items_f = items_f[items_f['Cliente'].str.lower().str.contains(bf, na=False) | items_f['Pieza'].str.lower().str.contains(bf, na=False)]
     for i, r in items_f.iterrows():
         with st.container():
