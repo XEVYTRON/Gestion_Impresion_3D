@@ -77,6 +77,7 @@ st.markdown("""
         .stat-cliente { font-size: 15px; font-weight: 700; color: #343a40; }
         .stat-detalle { font-size: 13px; color: #666; margin-top: 2px; }
         .stat-total { font-size: 16px; font-weight: 900; color: #6f42c1; margin-top: 4px; }
+        .badge-estado { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; background-color: #e9ecef; color: #495057; margin-bottom: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -111,8 +112,7 @@ if 'form_reset_key' not in st.session_state: st.session_state.form_reset_key = 0
 if st.session_state.df_pedidos is None:
     st.session_state.df_pedidos, st.session_state.df_facturas = cargar_datos_completos()
 
-df_p = st.session_state.df_pedidos
-df_f = st.session_state.df_facturas
+df_p, df_f = st.session_state.df_pedidos, st.session_state.df_facturas
 
 if df_p is None:
     st.error("⚠️ No se pudo conectar con Google Sheets."); st.stop()
@@ -128,24 +128,41 @@ if nav_cols[2].button("FACTURAS"): st.session_state.seccion = "FACTURAS"; st.rer
 if nav_cols[3].button("📊"): st.session_state.seccion = "ESTADISTICAS"; st.rerun()
 st.divider()
 
-# --- 8. VISTA: TRABAJOS ---
+# --- 8. VISTA: TRABAJOS (BUSCADOR GLOBAL IMPLEMENTADO) ---
 if st.session_state.seccion == "TRABAJOS":
     st.markdown('<p class="titulo-seccion">Trabajos Activos</p>', unsafe_allow_html=True)
-    filtro_nombre = st.text_input("🔍 Buscar...", placeholder="Cliente o pieza").lower()
+    
+    # Buscador principal
+    filtro_nombre = st.text_input("🔍 Buscar en todos los estados...", placeholder="Escribe cliente o pieza...").lower()
 
-    try: estado_actual = st.pills("Estado:", ESTADOS, default="Pendiente")
-    except: estado_actual = st.selectbox("Estado:", ESTADOS)
+    # Si NO hay búsqueda, mostramos los pills normales
+    if not filtro_nombre:
+        try: estado_actual = st.pills("Estado:", ESTADOS, default="Pendiente")
+        except: estado_actual = st.selectbox("Estado:", ESTADOS)
+        
+        items = df_p[df_p["Estado"] == estado_actual].sort_values(by="ID", ascending=True)
+    else:
+        # SI HAY BÚSQUEDA: Buscamos en todo df_p (ignora el estado seleccionado)
+        st.caption(f"🔎 Buscando '{filtro_nombre}' en todos los estados...")
+        items = df_p[
+            df_p['Cliente'].str.lower().str.contains(filtro_nombre) | 
+            df_p['Pieza'].str.lower().str.contains(filtro_nombre)
+        ].sort_values(by="ID", ascending=True)
 
-    items = df_p[df_p["Estado"] == estado_actual].sort_values(by="ID", ascending=True)
-    if filtro_nombre:
-        items = items[items['Cliente'].str.lower().str.contains(filtro_nombre) | items['Pieza'].str.lower().str.contains(filtro_nombre)]
-
+    if items.empty:
+        st.warning("No se han encontrado resultados.")
+    
     for i, row in items.iterrows():
         id_job = str(row['ID'])
         with st.container():
             txt_nota = str(row['Notas']).strip()
             html_nota = f'<p class="card-nota">Notas: {txt_nota}</p>' if txt_nota else ""
+            
+            # Añadimos una etiqueta visual del estado solo si estamos buscando globalmente
+            label_estado = f'<div class="badge-estado">{row["Estado"]}</div>' if filtro_nombre else ""
+            
             st.markdown(f"""<div class="card-container">
+                {label_estado}
                 <p class="card-fecha">{row['Fecha']} | ID: {id_job}</p>
                 <p class="card-nombre">{row['Cliente']}</p>
                 <p class="card-pieza">Pieza: {row['Pieza']}</p>
@@ -242,7 +259,7 @@ elif st.session_state.seccion == "FACTURAS":
             st.download_button("PDF 📩", data=pdf_data, file_name=f"F_{row['Cliente']}.pdf", key=f"btn_pdf_f_{row['ID']}")
             st.divider()
 
-# --- 11. ESTADÍSTICAS (FIXED FREQUENCY 'ME') ---
+# --- 11. ESTADÍSTICAS ---
 elif st.session_state.seccion == "ESTADISTICAS":
     st.markdown('<p class="titulo-seccion">Dashboard</p>', unsafe_allow_html=True)
     if not df_f.empty:
@@ -256,7 +273,6 @@ elif st.session_state.seccion == "ESTADISTICAS":
         col_m2.metric("📦 Nº Trabajos", total_pedidos)
         col_m3.metric("🎯 Ticket Medio", f"{ticket_medio:.2f} €")
         st.divider(); st.markdown("**Ventas por mes**")
-        # --- EL FIX: Cambiamos 'M' por 'ME' ---
         ventas_mes = df_stats.dropna(subset=['Fecha_DT']).set_index('Fecha_DT').resample('ME')['Precio'].sum()
         st.bar_chart(ventas_mes)
         st.divider(); st.markdown("**Ranking de clientes**")
