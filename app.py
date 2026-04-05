@@ -121,9 +121,9 @@ def card_html(fecha, id_job, cliente, pieza, nota, precio, badge=""):
     return f'<div class="card-container">{html_badge}<p class="card-fecha">{fecha} | ID: {id_job}</p><p class="card-nombre">{cliente}</p><p class="card-pieza">Pieza: {pieza}</p>{html_nota}<p class="card-precio">Precio: {precio:.2f} €</p></div>'
 
 # =========================================================
-# === CABECERA CORPORATIVA VYE 3D (MORADA Y MAYÚSCULAS) ===
+# === CABECERA CORPORATIVA VYE 3D (LETRAS GRANDES)      ===
 # =========================================================
-st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; margin-top: -30px; margin-bottom: 20px;'>VYE 3D</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900; margin-top: -30px; margin-bottom: 20px;'>VYE 3D</h1>", unsafe_allow_html=True)
 
 
 # --- 7. NAVEGACIÓN ---
@@ -193,7 +193,7 @@ if st.session_state.seccion == "TRABAJOS":
 
 # --- 9. VISTA: NUEVO TRABAJO ---
 elif st.session_state.seccion == "NUEVO TRABAJO":
-    st.markdown('<p class="titulo-seccion">Nuevo Proyecto</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Nuevo Proyecto VYE 3D</p>', unsafe_allow_html=True)
     with st.container(key=f"cn_{st.session_state.form_reset_key}"):
         nc = st.text_input("Cliente", key=f"ic_{st.session_state.form_reset_key}")
         np = st.text_input("Pieza", key=f"ip_{st.session_state.form_reset_key}")
