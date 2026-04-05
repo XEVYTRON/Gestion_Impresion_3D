@@ -120,6 +120,12 @@ def card_html(fecha, id_job, cliente, pieza, nota, precio, badge=""):
     html_badge = f'<div class="badge-estado">{badge}</div>' if badge else ""
     return f'<div class="card-container">{html_badge}<p class="card-fecha">{fecha} | ID: {id_job}</p><p class="card-nombre">{cliente}</p><p class="card-pieza">Pieza: {pieza}</p>{html_nota}<p class="card-precio">Precio: {precio:.2f} €</p></div>'
 
+# =========================================================
+# === CABECERA CORPORATIVA VYE 3D (MORADA Y MAYÚSCULAS) ===
+# =========================================================
+st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; margin-top: -30px; margin-bottom: 20px;'>VYE 3D</h1>", unsafe_allow_html=True)
+
+
 # --- 7. NAVEGACIÓN ---
 if 'seccion' not in st.session_state: st.session_state.seccion = "TRABAJOS"
 n_cols = st.columns(4)
@@ -131,7 +137,7 @@ st.divider()
 
 # --- 8. VISTA: TRABAJOS ---
 if st.session_state.seccion == "TRABAJOS":
-    st.markdown('<p class="titulo-seccion">Gestión VYE 3D</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Gestión de Trabajos</p>', unsafe_allow_html=True)
     texto_buscar = st.text_input("🔍 Buscar Cliente o Pieza...", value="").lower().strip()
 
     if texto_buscar:
@@ -187,7 +193,7 @@ if st.session_state.seccion == "TRABAJOS":
 
 # --- 9. VISTA: NUEVO TRABAJO ---
 elif st.session_state.seccion == "NUEVO TRABAJO":
-    st.markdown('<p class="titulo-seccion">Nuevo Proyecto VYE 3D</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Nuevo Proyecto</p>', unsafe_allow_html=True)
     with st.container(key=f"cn_{st.session_state.form_reset_key}"):
         nc = st.text_input("Cliente", key=f"ic_{st.session_state.form_reset_key}")
         np = st.text_input("Pieza", key=f"ip_{st.session_state.form_reset_key}")
@@ -196,9 +202,9 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
         hrs = ch.number_input("Horas", min_value=0.0, key=f"ih_{st.session_state.form_reset_key}")
         mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200, 300], value=100, key=f"im_{st.session_state.form_reset_key}")
         pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + mgn / 100)
-        st.markdown(f"### TOTAL: {pf:.2f} €")
+        st.markdown(f"### TOTAL ESTIMADO: {pf:.2f} €")
         nn = st.text_area("Notas", key=f"in_{st.session_state.form_reset_key}")
-        if st.button("GUARDAR"):
+        if st.button("GUARDAR TRABAJO"):
             if nc and np:
                 id_n = datetime.now().strftime("%y%m%d%H%M%S")
                 row = pd.DataFrame([{"ID": id_n, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": nc, "Pieza": np, "Estado": "Pendiente", "Precio": pf, "Gramos": gms, "Horas": hrs, "Notas": str(nn).strip()}])
@@ -211,7 +217,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
 
 # --- 10. FACTURAS ---
 elif st.session_state.seccion == "FACTURAS":
-    st.markdown('<p class="titulo-seccion">Historial VYE 3D</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
     bf = st.text_input("🔍 Buscar Nombre o Pieza...", value="").lower().strip()
     df_ff = df_f.copy()
     df_ff['Fecha_DT'] = pd.to_datetime(df_ff['Fecha'], format="%d/%m/%Y", errors='coerce')
@@ -233,7 +239,7 @@ elif st.session_state.seccion == "FACTURAS":
 
 # --- 11. ESTADÍSTICAS ---
 elif st.session_state.seccion == "ESTADISTICAS":
-    st.markdown('<p class="titulo-seccion">Dashboard VYE 3D</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Dashboard de Negocio</p>', unsafe_allow_html=True)
     if not df_f.empty:
         df_s = df_f.copy()
         df_s['Precio'] = pd.to_numeric(df_s['Precio'], errors='coerce').fillna(0.0)
