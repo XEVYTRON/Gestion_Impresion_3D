@@ -12,12 +12,12 @@ try:
 except:
     PASSWORD_APP = "xevy2024"
 
-# --- 2. UTILIDADES DE PDF ---
+# --- 2. UTILIDADES DE PDF (AHORA COMO VYE 3D) ---
 def crear_pdf(id_factura, fecha, cliente, pieza, total, notas=""):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="XEVYTRON 3D - FACTURA", ln=True, align='C')
+    pdf.cell(200, 10, txt="VYE 3D - FACTURA", ln=True, align='C') # Nombre cambiado
     pdf.ln(5)
     pdf.set_font("Arial", '', 11)
 
@@ -39,12 +39,12 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas=""):
     pdf.cell(200, 10, txt=f"TOTAL: {total:.2f} Euros", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
-# --- 3. CONFIGURACIÓN ---
+# --- 3. CONFIGURACIÓN (TÍTULO DE PESTAÑA VYE 3D) ---
 try:
     icon = Image.open("image_7.png")
 except:
     icon = "🛠️"
-st.set_page_config(page_title="Xevytron 3D", page_icon=icon, layout="centered")
+st.set_page_config(page_title="VYE 3D", page_icon=icon, layout="centered")
 
 # --- 4. ACCESO ---
 if 'autenticado' not in st.session_state:
@@ -54,7 +54,7 @@ if "p" in st.query_params and st.query_params["p"] == PASSWORD_APP:
     st.session_state.autenticado = True
 
 if not st.session_state.autenticado:
-    st.markdown("<h1 style='text-align: center;'>🔐 Acceso Xevytron 3D</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🔐 Acceso VYE 3D</h1>", unsafe_allow_html=True) # Nombre cambiado
     pass_input = st.text_input("Contraseña", type="password")
     if st.button("ENTRAR"):
         if pass_input == PASSWORD_APP:
@@ -127,7 +127,6 @@ if df_p is None:
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 
-# Función helper para construir la tarjeta HTML en UNA SOLA LÍNEA (evita que se muestre como texto)
 def card_html(fecha, id_job, cliente, pieza, nota, precio, badge=""):
     html_nota = f'<p class="card-nota">Notas: {nota}</p>' if nota else ""
     html_badge = f'<div class="badge-estado">{badge}</div>' if badge else ""
@@ -145,7 +144,7 @@ st.divider()
 
 # --- 8. VISTA: TRABAJOS ---
 if st.session_state.seccion == "TRABAJOS":
-    st.markdown('<p class="titulo-seccion">Gestión de Trabajos</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Gestión VYE 3D</p>', unsafe_allow_html=True)
     texto_buscar = st.text_input("🔍 Buscar Cliente o Pieza...", value="").lower().strip()
 
     if texto_buscar:
@@ -188,10 +187,8 @@ if st.session_state.seccion == "TRABAJOS":
                         st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f
                         st.rerun()
 
-                # BORRADO SEGURO
                 ck = f"dk_{id_job}"
-                if ck not in st.session_state:
-                    st.session_state[ck] = False
+                if ck not in st.session_state: st.session_state[ck] = False
                 if not st.session_state[ck]:
                     if st.button("🗑️ ELIMINAR", key=f"bd_{id_job}"):
                         st.session_state[ck] = True
@@ -216,7 +213,7 @@ if st.session_state.seccion == "TRABAJOS":
 
 # --- 9. VISTA: NUEVO TRABAJO ---
 elif st.session_state.seccion == "NUEVO TRABAJO":
-    st.markdown('<p class="titulo-seccion">Nuevo Trabajo</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Nuevo Proyecto VYE 3D</p>', unsafe_allow_html=True)
     with st.container(key=f"cn_{st.session_state.form_reset_key}"):
         nuevo_cliente = st.text_input("Cliente", key=f"ic_{st.session_state.form_reset_key}")
         nueva_pieza = st.text_input("Pieza", key=f"ip_{st.session_state.form_reset_key}")
@@ -238,12 +235,11 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
                 st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f
                 st.session_state.form_reset_key += 1
                 st.rerun()
-            else:
-                st.error("Rellena Cliente y Pieza.")
+            else: st.error("Rellena Cliente y Pieza.")
 
 # --- 10. FACTURAS ---
 elif st.session_state.seccion == "FACTURAS":
-    st.markdown('<p class="titulo-seccion">Historial de Facturas</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Historial VYE 3D</p>', unsafe_allow_html=True)
     bf = st.text_input("🔍 Buscar Nombre o Pieza...", placeholder="Ej: Juan...").lower()
     df_ff = df_f.copy()
     df_ff['Fecha_DT'] = pd.to_datetime(df_ff['Fecha'], format="%d/%m/%Y", errors='coerce')
@@ -255,8 +251,7 @@ elif st.session_state.seccion == "FACTURAS":
         d = c1.date_input("Desde", f_min)
         h = c2.date_input("Hasta", f_max)
         items_f = df_ff[(df_ff['Fecha_DT'].dt.date >= d) & (df_ff['Fecha_DT'].dt.date <= h)].sort_values(by="ID", ascending=False)
-    else:
-        items_f = df_f.sort_values(by="ID", ascending=False)
+    else: items_f = df_f.sort_values(by="ID", ascending=False)
 
     if bf:
         items_f = items_f[items_f['Cliente'].str.lower().str.contains(bf, na=False) | items_f['Pieza'].str.lower().str.contains(bf, na=False)]
@@ -273,15 +268,13 @@ elif st.session_state.seccion == "FACTURAS":
 
 # --- 11. ESTADÍSTICAS ---
 elif st.session_state.seccion == "ESTADISTICAS":
-    st.markdown('<p class="titulo-seccion">Estadísticas</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Dashboard VYE 3D</p>', unsafe_allow_html=True)
     if not df_f.empty:
         df_s = df_f.copy()
         df_s['Precio'] = pd.to_numeric(df_s['Precio'], errors='coerce').fillna(0.0)
         df_s['Fecha_DT'] = pd.to_datetime(df_s['Fecha'], format="%d/%m/%Y", errors='coerce')
 
-        # MÉTRICAS GLOBALES
-        total_v = df_s['Precio'].sum()
-        total_t = len(df_s)
+        total_v, total_t = df_s['Precio'].sum(), len(df_s)
         ticket_m = total_v / total_t if total_t > 0 else 0
         m1, m2, m3 = st.columns(3)
         m1.metric("💶 Total Ventas", f"{total_v:.2f} €")
@@ -289,28 +282,15 @@ elif st.session_state.seccion == "ESTADISTICAS":
         m3.metric("🎯 Ticket Medio", f"{ticket_m:.2f} €")
 
         st.divider()
-
-        # GRÁFICO POR MES
         st.markdown("**Ventas por mes**")
         df_chart = df_s.dropna(subset=['Fecha_DT'])
         if not df_chart.empty:
-            try:
-                vm = df_chart.set_index('Fecha_DT').resample('ME')['Precio'].sum()
-            except Exception:
-                vm = df_chart.set_index('Fecha_DT').resample('M')['Precio'].sum()
+            try: vm = df_chart.set_index('Fecha_DT').resample('ME')['Precio'].sum()
+            except: vm = df_chart.set_index('Fecha_DT').resample('M')['Precio'].sum()
             st.bar_chart(vm)
 
         st.divider()
-
-        # RANKING POR CLIENTE
         st.markdown("**Ranking de clientes**")
-        ranking = (
-            df_s.groupby('Cliente')
-            .agg(Total=('Precio', 'sum'), Trabajos=('Precio', 'count'), Ticket_Medio=('Precio', 'mean'))
-            .sort_values('Total', ascending=False)
-            .reset_index()
-        )
+        ranking = df_s.groupby('Cliente').agg(Total=('Precio', 'sum'), Trabajos=('Precio', 'count'), Ticket_Medio=('Precio', 'mean')).sort_values('Total', ascending=False).reset_index()
         for _, r in ranking.iterrows():
             st.markdown(f'<div class="stat-card"><p class="stat-cliente">👤 {r["Cliente"]}</p><p class="stat-detalle">{int(r["Trabajos"])} trabajo(s) · Ticket medio: {r["Ticket_Medio"]:.2f} €</p><p class="stat-total">Total: {r["Total"]:.2f} €</p></div>', unsafe_allow_html=True)
-    else:
-        st.info("Aún no hay facturas registradas.")
