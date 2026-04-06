@@ -6,13 +6,13 @@ from fpdf import FPDF
 from PIL import Image
 from io import BytesIO
 
-# --- 1. SEGURIDAD ---
+# --- 1. SEGURIDAD (SECRETS + URL) ---
 try:
     PASSWORD_APP = st.secrets["password"]
 except:
     PASSWORD_APP = "xevy2024"
 
-# --- 2. UTILIDADES DE PDF (VYE 3D - HOJA ÚNICA TOTAL) ---
+# --- 2. UTILIDADES DE PDF (VYE 3D - HOJA ÚNICA, ALINEACIÓN Y GROSOR) ---
 def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, horas=0):
     pdf = FPDF()
     pdf.add_page()
@@ -44,6 +44,7 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.set_line_width(0.8)
     pdf.line(10, 32, 200, 32)
     
+    # POSICIÓN TRAS LA LÍNEA
     pdf.set_y(38) 
 
     # --- INFORMACIÓN CLIENTE Y FECHA ---
@@ -79,7 +80,7 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.ln(10)
 
     # --- NOTAS ---
-    nota_limpia = str(notes).strip()
+    nota_limpia = str(notas).strip() # CORREGIDO: Usando 'notas' (el argumento de la función)
     if nota_limpia and nota_limpia.lower() != 'nan':
         pdf.set_font("Arial", 'B', 10)
         pdf.set_text_color(r_corp, g_corp, b_corp)
@@ -96,16 +97,13 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.cell(125, 10, "", border=0)
     pdf.cell(65, 10, format_es(f" TOTAL A PAGAR: {total:.2f} EUR "), border=0, fill=True, align='R')
 
-    # --- PIE DE PÁGINA (DATOS AGRUPADOS EN UNA SOLA HOJA) ---
-    # Colocamos el bloque de contacto un poco más arriba para asegurar la primera hoja
+    # --- PIE DE PÁGINA (TODO EN PRIMERA HOJA) ---
     pdf.set_y(-38) 
     pdf.set_font("Arial", 'B', 8) 
     pdf.set_text_color(120)
     pdf.cell(0, 4, format_es("Gracias por confiar en VYE 3D para tus proyectos de fabricación aditiva."), align='C', ln=True)
     pdf.set_text_color(r_corp, g_corp, b_corp)
-    # Instagram y Email
     pdf.cell(0, 4, "Instagram: @vye3d  |  Email: vye3d@hotmail.com", align='C', ln=True)
-    # Teléfonos justo debajo
     pdf.cell(0, 4, "Contacto: 660211456 / 625375222", align='C')
 
     return pdf.output(dest="S").encode("latin-1")
@@ -233,16 +231,15 @@ if st.session_state.seccion == "TRABAJOS":
                 with st.form(f"fm_{id_job}"):
                     ec = st.text_input("Cliente", value=r['Cliente'])
                     ep = st.text_input("Pieza", value=r['Pieza'])
-                    c_edit_1, c_edit_2 = st.columns(2)
-                    egr = c_edit_1.number_input("Gramos", value=float(r['Gramos']), min_value=0.0)
-                    ehr = c_edit_2.number_input("Horas", value=float(r['Horas']), min_value=0.0)
+                    c1, c2 = st.columns(2)
+                    egr = c1.number_input("Gramos", value=float(r['Gramos']), min_value=0.0)
+                    ehr = c2.number_input("Horas", value=float(r['Horas']), min_value=0.0)
                     epr = st.number_input("Precio Final (€)", value=float(r['Precio']))
                     en = st.text_area("Notas", value=n_limpia)
                     if st.form_submit_button("Guardar Cambios"):
                         columnas_upd = ['Cliente', 'Pieza', 'Precio', 'Notas', 'Gramos', 'Horas']
-                        valores_upd = [ec, ep, epr, str(en).strip(), egr, ehr]
-                        df_p.loc[df_p['ID'].astype(str) == id_job, columnas_upd] = valores_upd
-                        df_f.loc[df_f['ID'].astype(str) == id_job, columnas_upd] = valores_upd
+                        df_p.loc[df_p['ID'].astype(str) == id_job, columnas_upd] = [ec, ep, epr, str(en).strip(), egr, ehr]
+                        df_f.loc[df_f['ID'].astype(str) == id_job, columnas_upd] = [ec, ep, epr, str(en).strip(), egr, ehr]
                         conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f)
                         st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f; st.rerun()
             pdf_trabajo = crear_pdf(id_job, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Gramos'], r['Horas'])
