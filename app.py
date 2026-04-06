@@ -13,7 +13,7 @@ try:
 except:
     PASSWORD_APP = "xevy2024"
 
-# --- 2. MOTOR DE PDF (DISEÑO ROBUSTO Y HOJA ÚNICA) ---
+# --- 2. MOTOR DE PDF ---
 def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, horas=0):
     pdf = FPDF()
     pdf.add_page()
@@ -65,7 +65,10 @@ st.markdown("""<style>
 .card-precio { font-size: 17px; color: #111 !important; font-weight: 900; margin-top: 8px; border-top: 1px solid #eee; padding-top: 5px; }
 .card-entrega { font-size: 11px; font-weight: 700; color: #d63384; margin-bottom: 5px; text-transform: uppercase; }
 .badge-estado { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; background-color: #f1f3f5; color: #6f42c1; border: 1px solid #6f42c1; margin-bottom: 5px; }
-.stButton button { width: 100%; font-weight: 600; }
+.stat-card { background-color: #f8f9fa; border-radius: 10px; padding: 12px 16px; border-left: 5px solid #6f42c1; margin-bottom: 8px; }
+.stat-cliente { font-size: 15px; font-weight: 700; color: #343a40; }
+.stat-detalle { font-size: 13px; color: #666; margin-top: 2px; }
+.stat-total { font-size: 16px; font-weight: 900; color: #6f42c1; margin-top: 4px; }
 </style>""", unsafe_allow_html=True)
 
 # --- 5. DATOS ---
@@ -79,7 +82,6 @@ def limpiar_df(df, con_estado=False):
     df = df[cols_base].copy()
     df['Prioridad'] = df['Prioridad'].fillna('Media').replace('', 'Media').astype(str)
     df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False)
-    # Limpiamos el texto "nan" de las entregas
     df['Entrega'] = df['Entrega'].astype(str).replace(['nan', 'NaN', 'None', ''], '')
     for n in ['Precio', 'Gramos', 'Horas']: df[n] = pd.to_numeric(df[n], errors='coerce').fillna(0.0)
     return df
@@ -97,24 +99,20 @@ PRIORIDADES = ["Baja", "Media", "Alta", "URGENTE"]
 
 def card_html(r, badge=""):
     prio = str(r['Prioridad']).lower()
-    # Evitamos mostrar "NAN" en la entrega
     e_str = str(r['Entrega']).strip()
     ent = f"<p class='card-entrega'>⏱️ ENTREGA: {e_str}</p>" if e_str and e_str.lower() != 'nan' else ""
     nt = f"<p class='card-nota'>Notas: {r['Notas']}</p>" if r['Notas'] and str(r['Notas']).lower() != 'nan' else ""
     bdg = f"<div class='badge-estado'>{badge}</div>" if badge else ""
     return f'<div class="card-container card-{prio}">{bdg}{ent}<p class="card-fecha">{r["Fecha"]} | ID: {r["ID"]}</p><p class="card-nombre">{r["Cliente"]}</p><p class="card-pieza">Pieza: {r["Pieza"]}</p>{nt}<p class="card-precio">{r["Precio"]:.2f} €</p></div>'
 
-# --- 6. ACCESO (RESTAURADO BOTÓN ENTRAR) ---
+# --- 6. ACCESO ---
 if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
     st.markdown("<h1 style='text-align: center;'>🔐 Acceso VYE 3D</h1>", unsafe_allow_html=True)
     pass_input = st.text_input("Contraseña", type="password")
     if st.button("ENTRAR"):
-        if pass_input == PASSWORD_APP:
-            st.session_state.auth = True
-            st.rerun()
-        else:
-            st.error("Contraseña incorrecta")
+        if pass_input == PASSWORD_APP: st.session_state.auth = True; st.rerun()
+        else: st.error("Incorrecta")
     st.stop()
 
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900;'>VYE 3D</h1>", unsafe_allow_html=True)
@@ -150,16 +148,10 @@ if st.session_state.sec == "TRABAJOS":
                 eg, eh, epr = c3.number_input("Gramos", value=float(r['Gramos'])), c4.number_input("Horas", value=float(r['Horas'])), c5.number_input("Precio (€)", value=float(r['Precio']))
                 c6, c7, c8 = st.columns(3)
                 eprio = c6.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(r['Prioridad']))
-                
-                # REPARACIÓN DE FECHA: Evita el TypeError
                 e_str = str(r['Entrega']).strip()
-                try:
-                    ent_val = datetime.strptime(e_str, "%d/%m/%Y")
-                except:
-                    ent_val = datetime.now() # Fallback si no hay fecha válida
-                
-                eent = c7.date_input("Entrega", value=ent_val)
-                etel = c8.text_input("Tel.", r['Telefono'])
+                try: ent_val = datetime.strptime(e_str, "%d/%m/%Y")
+                except: ent_val = datetime.now()
+                eent, etel = c7.date_input("Entrega", value=ent_val), c8.text_input("Tel.", r['Telefono'])
                 en = st.text_area("Notas", r['Notas'])
                 if st.form_submit_button("Guardar"):
                     vals = [ec, ep, epr, str(en).strip(), eg, eh, eprio, eent.strftime("%d/%m/%Y"), etel]
@@ -178,10 +170,7 @@ elif st.session_state.sec == "NUEVO":
         np = st.text_input("Pieza")
         c3, c4, c5 = st.columns(3)
         gms, hrs, prio = c3.number_input("Gramos", 0.0), c4.number_input("Horas", 0.0), c5.selectbox("Prioridad", PRIORIDADES, index=1)
-        
-        # EL USUARIO ELIGE LA FECHA LIBREMENTE
-        ent = st.date_input("Fecha de Entrega", value=datetime.now()) 
-        
+        ent = st.date_input("Entrega", value=datetime.now())
         mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200], value=100)
         pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + mgn / 100)
         st.write(f"### TOTAL: {pf:.2f} €")
@@ -201,11 +190,36 @@ elif st.session_state.sec == "FACTURAS":
         st.download_button("📩 PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"f_{r['ID']}")
         st.divider()
 
-# --- 11. STATS ---
+# --- 11. DASHBOARD EJECUTIVO (RESTAURADO) ---
 elif st.session_state.sec == "STATS":
-    total_v = df_f['Precio'].sum(); total_g, total_h = df_f['Gramos'].sum(), df_f['Horas'].sum()
-    beneficio = total_v - (total_g * 0.024 + total_h * 0.20)
-    c1, c2, c3 = st.columns(3); c1.metric("Ingresos", f"{total_v:.2f} €"); c2.metric("Beneficio Neto", f"{beneficio:.2f} €"); c3.metric("Trabajos", len(df_f))
-    st.divider(); df_f['F_DT'] = pd.to_datetime(df_f['Fecha'], format="%d/%m/%Y", errors='coerce')
-    vm = df_f.dropna(subset=['F_DT']).set_index('F_DT').resample('ME')['Precio'].sum()
-    st.bar_chart(vm)
+    st.markdown('<p class="titulo-seccion">Dashboard Ejecutivo VYE 3D</p>', unsafe_allow_html=True)
+    if not df_f.empty:
+        df_s = df_f.copy()
+        total_v = df_s['Precio'].sum(); total_g, total_h = df_s['Gramos'].sum(), df_s['Horas'].sum()
+        # Costes según tu factura y máquinas
+        coste_m = total_g * 0.024; coste_maquina = total_h * 0.20
+        beneficio_n = total_v - (coste_m + coste_maquina)
+
+        st.markdown("### 💰 Finanzas Reales")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Ingresos Totales", f"{total_v:.2f} €")
+        m2.metric("Beneficio Neto Est.", f"{beneficio_n:.2f} €", delta=f"{((beneficio_n/total_v)*100) if total_v > 0 else 0:.1f}% Margen")
+        m3.metric("Ticket Medio", f"{(total_v/len(df_s)):.2f} €")
+
+        st.markdown("### ⚙️ Rendimiento Taller")
+        m4, m5, m6 = st.columns(3)
+        m4.metric("Filamento Gastado", f"{total_g/1000:.2f} kg")
+        m5.metric("Tiempo de Vuelo", f"{total_h:.1f} h")
+        m6.metric("Trabajos", len(df_s))
+
+        st.divider(); st.markdown("**Evolución Mensual**")
+        df_s['F_DT'] = pd.to_datetime(df_s['Fecha'], format="%d/%m/%Y", errors='coerce')
+        vm = df_s.dropna(subset=['F_DT']).set_index('F_DT').resample('ME')['Precio'].sum()
+        st.bar_chart(vm)
+
+        st.divider(); st.markdown("**🏆 Ranking de Clientes (Top 5)**")
+        ranking = df_s.groupby('Cliente').agg(Total=('Precio', 'sum'), Trabajos=('Precio', 'count')).sort_values('Total', ascending=False).head(5).reset_index()
+        for i, r in ranking.iterrows():
+            st.markdown(f'<div class="stat-card"><p class="stat-cliente">#{i+1} 👤 {r["Cliente"]}</p><p class="stat-detalle">{int(r["Trabajos"])} trabajos realizados</p><p class="stat-total">Total Facturado: {r["Total"]:.2f} €</p></div>', unsafe_allow_html=True)
+    else:
+        st.info("No hay datos para mostrar.")
