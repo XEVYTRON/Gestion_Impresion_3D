@@ -12,7 +12,7 @@ try:
 except:
     PASSWORD_APP = "xevy2024"
 
-# --- 2. UTILIDADES DE PDF RE-DISEÑADAS (VYE 3D PREMIUM) ---
+# --- 2. UTILIDADES DE PDF (VYE 3D CON CONTACTO ACTUALIZADO) ---
 def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, horas=0):
     pdf = FPDF()
     pdf.add_page()
@@ -59,7 +59,6 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.ln(10)
 
     # --- TABLA DE TRABAJO ---
-    # Encabezado de tabla
     pdf.set_fill_color(r_corp, g_corp, b_corp)
     pdf.set_text_color(255)
     pdf.set_font("Arial", 'B', 10)
@@ -69,7 +68,6 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.cell(40, 8, " TOTAL", border=0, fill=True, align='R')
     pdf.ln(8)
 
-    # Contenido de tabla
     pdf.set_text_color(0)
     pdf.set_font("Arial", '', 10)
     pdf.set_draw_color(230)
@@ -92,18 +90,20 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
         pdf.ln(10)
 
     # --- RESUMEN FINAL ---
-    pdf.set_y(-50)
+    pdf.set_y(-60)
     pdf.set_font("Arial", 'B', 14)
     pdf.set_fill_color(245, 245, 245)
     pdf.cell(130, 12, "", border=0)
     pdf.cell(60, 12, format_es(f" TOTAL A PAGAR: {total:.2f} EUR "), border=0, fill=True, align='R')
 
-    # --- PIE DE PÁGINA ---
-    pdf.set_y(-25)
+    # --- PIE DE PÁGINA (DATOS ACTUALIZADOS) ---
+    pdf.set_y(-35)
     pdf.set_font("Arial", 'I', 8)
     pdf.set_text_color(150)
-    pdf.cell(0, 10, "Gracias por confiar en VYE 3D para tus proyectos de fabricacion aditiva.", align='C', ln=True)
-    pdf.cell(0, 5, "vye3d.streamlit.app", align='C')
+    pdf.cell(0, 5, format_es("Gracias por confiar en VYE 3D para tus proyectos de fabricación aditiva."), align='C', ln=True)
+    pdf.set_font("Arial", 'B', 8)
+    pdf.cell(0, 5, "Instagram: @vye3d  |  Email: vye3d@hotmail.com", align='C', ln=True)
+    pdf.cell(0, 5, "Contacto: 660211456 / 625375222", align='C')
 
     return pdf.output(dest="S").encode("latin-1")
 
@@ -190,7 +190,7 @@ def card_html(fecha, id_job, cliente, pieza, nota, precio, badge=""):
     html_badge = f'<div class="badge-estado">{badge}</div>' if badge else ""
     return f'<div class="card-container">{html_badge}<p class="card-fecha">{fecha} | ID: {id_job}</p><p class="card-nombre">{cliente}</p><p class="card-pieza">Pieza: {pieza}</p>{html_nota}<p class="card-precio">Precio: {precio:.2f} €</p></div>'
 
-# --- TÍTULO CORPORATIVO ---
+# TÍTULO CORPORATIVO VYE 3D
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900; margin-top: -30px; margin-bottom: 20px;'>VYE 3D</h1>", unsafe_allow_html=True)
 
 # --- 7. NAVEGACIÓN ---
@@ -264,7 +264,6 @@ if st.session_state.seccion == "TRABAJOS":
                     if c2.button("NO ❌", key=f"cn_{id_job}"):
                         st.session_state[ck] = False; st.rerun()
             
-            # --- BOTÓN PDF ACTUALIZADO ---
             pdf_trabajo = crear_pdf(id_job, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Gramos'], r['Horas'])
             st.download_button("PDF 📩", data=pdf_trabajo, file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_job}")
         st.divider()
@@ -312,8 +311,6 @@ elif st.session_state.seccion == "FACTURAS":
     for i, r in items_f.iterrows():
         with st.container():
             st.markdown(card_html(r['Fecha'], r['ID'], r['Cliente'], r['Pieza'], str(r['Notas']).strip(), float(r['Precio'])), unsafe_allow_html=True)
-            
-            # --- BOTÓN PDF ACTUALIZADO EN HISTORIAL ---
             pdf_hist = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Gramos'], r['Horas'])
             st.download_button("PDF 📩", data=pdf_hist, file_name=f"F_{r['Cliente']}.pdf", key=f"ph_{r['ID']}")
             st.divider()
