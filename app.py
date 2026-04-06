@@ -80,7 +80,7 @@ def limpiar_df(df, con_estado=False):
     for c in cols_base:
         if c not in df.columns: df[c] = ""
     df = df[cols_base].copy()
-    df['Prioridad'] = df['Prioridad'].fillna('Media').replace('', 'Media').astype(str)
+    df['Prioridad'] = df['Prioridad'].fillna('Media').replace(['', 'nan', 'NaN'], 'Media').astype(str)
     df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False)
     df['Entrega'] = df['Entrega'].astype(str).replace(['nan', 'NaN', 'None', ''], '')
     for n in ['Precio', 'Gramos', 'Horas']: df[n] = pd.to_numeric(df[n], errors='coerce').fillna(0.0)
@@ -88,11 +88,17 @@ def limpiar_df(df, con_estado=False):
 
 @st.cache_data(ttl=1)
 def cargar_todo():
-    p = conn.read(worksheet="Pedidos", ttl=0); f = conn.read(worksheet="Facturas", ttl=0)
-    return limpiar_df(p, True), limpiar_df(f, False)
+    try:
+        p = conn.read(worksheet="Pedidos", ttl=0)
+        f = conn.read(worksheet="Facturas", ttl=0)
+        return limpiar_df(p, True), limpiar_df(f, False)
+    except: return None, None
 
-if 'df_p' not in st.session_state: st.session_state.df_p, st.session_state.df_f = cargar_todo()
-df_p, df_f = st.session_state.df_p, st.session_state.df_f
+# Inicializar sesión
+if 'df_p' not in st.session_state:
+    st.session_state.df_p, st.session_state.df_f = cargar_todo()
+if 'reset_key' not in st.session_state:
+    st.session_state.reset_key = 0
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 PRIORIDADES = ["Baja", "Media", "Alta", "URGENTE"]
@@ -101,7 +107,7 @@ def card_html(r, badge=""):
     prio = str(r['Prioridad']).lower()
     e_str = str(r['Entrega']).strip()
     ent = f"<p class='card-entrega'>⏱️ ENTREGA: {e_str}</p>" if e_str and e_str.lower() != 'nan' else ""
-    nt = f"<p class='card-nota'>Notas: {r['Notas']}</p>" if r['Notas'] and str(r['Notas']).lower() != 'nan' else ""
+    nt = f"<p class='card-nota'>Notas: {r['Notas']}</p>" if r['Notas'] and str(r['Notas']).lower() != 'nan' and str(r['Notas']).strip() != "" else ""
     bdg = f"<div class='badge-estado'>{badge}</div>" if badge else ""
     return f'<div class="card-container card-{prio}">{bdg}{ent}<p class="card-fecha">{r["Fecha"]} | ID: {r["ID"]}</p><p class="card-nombre">{r["Cliente"]}</p><p class="card-pieza">Pieza: {r["Pieza"]}</p>{nt}<p class="card-precio">{r["Precio"]:.2f} €</p></div>'
 
@@ -109,10 +115,13 @@ def card_html(r, badge=""):
 if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
     st.markdown("<h1 style='text-align: center;'>🔐 Acceso VYE 3D</h1>", unsafe_allow_html=True)
-    pass_input = st.text_input("Contraseña", type="password")
+    pass_input = st.text_input("Contraseña", type="password", key="login_pass")
     if st.button("ENTRAR"):
-        if pass_input == PASSWORD_APP: st.session_state.auth = True; st.rerun()
-        else: st.error("Incorrecta")
+        if pass_input == PASSWORD_APP:
+            st.session_state.auth = True
+            st.rerun()
+        else:
+            st.error("Incorrecta")
     st.stop()
 
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900;'>VYE 3D</h1>", unsafe_allow_html=True)
@@ -126,77 +135,115 @@ if n_cols[2].button("FACTURAS"): st.session_state.sec = "FACTURAS"; st.rerun()
 if n_cols[3].button("📊"): st.session_state.sec = "STATS"; st.rerun()
 st.divider()
 
+df_p, df_f = st.session_state.df_p, st.session_state.df_f
+
 # --- 8. VISTA: TRABAJOS ---
 if st.session_state.sec == "TRABAJOS":
-    busc = st.text_input("🔍 Buscar...").lower().strip()
-    items = df_p[df_p['Cliente'].str.lower().str.contains(busc) | df_p['Pieza'].str.lower().str.contains(busc)] if busc else df_p[df_p["Estado"] == st.selectbox("Estado:", ESTADOS)]
+    busc = st.text_input("🔍 Buscar Cliente o Pieza...").lower().strip()
+    if busc:
+        items = df_p[df_p['Cliente'].str.lower().str.contains(busc) | df_p['Pieza'].str.lower().str.contains(busc)]
+    else:
+        est_sel = st.selectbox("Estado:", ESTADOS)
+        items = df_p[df_p["Estado"] == est_sel]
     
     items['pv'] = items['Prioridad'].map({"Baja":1, "Media":2, "Alta":3, "URGENTE":4}).fillna(2)
     for idx, r in items.sort_values(by="pv", ascending=False).iterrows():
         st.markdown(card_html(r, r['Estado'] if busc else ""), unsafe_allow_html=True)
         c1, c2 = st.columns(2)
-        upd = c1.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"e_{r['ID']}")
-        if upd != r['Estado']: df_p.at[idx, "Estado"] = upd; conn.update(worksheet="Pedidos", data=df_p); st.rerun()
+        upd = c1.selectbox("Cambiar Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"upd_{r['ID']}")
+        if upd != r['Estado']:
+            df_p.at[idx, "Estado"] = upd
+            conn.update(worksheet="Pedidos", data=df_p)
+            st.session_state.df_p = df_p # Actualizar memoria
+            st.rerun()
+        
         if r['Telefono']:
-            url = f"https://wa.me/{r['Telefono']}?text=" + urllib.parse.quote(f"Hola {r['Cliente']}, tu pedido {r['Pieza']} ya esta listo!")
+            url = f"https://wa.me/{r['Telefono']}?text=" + urllib.parse.quote(f"Hola {r['Cliente']}, tu pedido {r['Pieza']} de VYE 3D ya está listo!")
             c2.link_button("🟢 WHATSAPP", url)
         
         with st.expander("MODIFICAR / PDF ⚙️"):
-            with st.form(f"f_{r['ID']}"):
-                ec, ep = st.text_input("Cliente", r['Cliente']), st.text_input("Pieza", r['Pieza'])
+            with st.form(f"form_mod_{r['ID']}"):
+                ec = st.text_input("Cliente", r['Cliente'])
+                ep = st.text_input("Pieza", r['Pieza'])
                 c3, c4, c5 = st.columns(3)
-                eg, eh, epr = c3.number_input("Gramos", value=float(r['Gramos'])), c4.number_input("Horas", value=float(r['Horas'])), c5.number_input("Precio (€)", value=float(r['Precio']))
+                eg = c3.number_input("Gramos", value=float(r['Gramos']))
+                eh = c4.number_input("Horas", value=float(r['Horas']))
+                epr = c5.number_input("Precio (€)", value=float(r['Precio']))
                 c6, c7, c8 = st.columns(3)
                 eprio = c6.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(r['Prioridad']))
-                e_str = str(r['Entrega']).strip()
-                try: ent_val = datetime.strptime(e_str, "%d/%m/%Y")
+                try: ent_val = datetime.strptime(str(r['Entrega']), "%d/%m/%Y")
                 except: ent_val = datetime.now()
-                eent, etel = c7.date_input("Entrega", value=ent_val), c8.text_input("Tel.", r['Telefono'])
+                eent = c7.date_input("Entrega", value=ent_val)
+                etel = c8.text_input("Tel.", r['Telefono'])
                 en = st.text_area("Notas", r['Notas'])
                 if st.form_submit_button("Guardar"):
                     vals = [ec, ep, epr, str(en).strip(), eg, eh, eprio, eent.strftime("%d/%m/%Y"), etel]
                     df_p.loc[df_p['ID'] == r['ID'], ['Cliente', 'Pieza', 'Precio', 'Notas', 'Gramos', 'Horas', 'Prioridad', 'Entrega', 'Telefono']] = vals
                     df_f.loc[df_f['ID'] == r['ID'], ['Cliente', 'Pieza', 'Precio', 'Notas', 'Gramos', 'Horas', 'Prioridad', 'Entrega', 'Telefono']] = vals
-                    conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f); st.rerun()
-            st.download_button("📩 PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
-            if st.button("🗑️ Eliminar", key=f"d_{r['ID']}"): df_p = df_p[df_p['ID'] != r['ID']]; conn.update(worksheet="Pedidos", data=df_p); st.rerun()
+                    conn.update(worksheet="Pedidos", data=df_p)
+                    conn.update(worksheet="Facturas", data=df_f)
+                    st.session_state.df_p, st.session_state.df_f = df_p, df_f # Actualizar memoria
+                    st.rerun()
+            
+            st.download_button("📩 PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"pdf_{r['ID']}")
+            if st.button("🗑️ Eliminar Trabajo", key=f"del_{r['ID']}"):
+                df_p = df_p[df_p['ID'] != r['ID']]
+                df_f = df_f[df_f['ID'] != r['ID']]
+                conn.update(worksheet="Pedidos", data=df_p)
+                conn.update(worksheet="Facturas", data=df_f)
+                st.session_state.df_p, st.session_state.df_f = df_p, df_f # Actualizar memoria
+                st.rerun()
         st.divider()
 
 # --- 9. VISTA: NUEVO ---
 elif st.session_state.sec == "NUEVO":
-    with st.form("n"):
-        c1, c2 = st.columns(2)
-        nc, ntel = c1.text_input("Cliente"), c2.text_input("WhatsApp (34...)")
-        np = st.text_input("Pieza")
-        c3, c4, c5 = st.columns(3)
-        gms, hrs, prio = c3.number_input("Gramos", 0.0), c4.number_input("Horas", 0.0), c5.selectbox("Prioridad", PRIORIDADES, index=1)
-        ent = st.date_input("Entrega", value=datetime.now())
-        mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200], value=100)
-        pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + mgn / 100)
-        st.write(f"### TOTAL: {pf:.2f} €")
-        nn = st.text_area("Notas")
-        if st.form_submit_button("GUARDAR"):
-            id_n = datetime.now().strftime("%y%m%d%H%M%S")
-            nueva = pd.DataFrame([{"ID": id_n, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": nc, "Pieza": np, "Estado": "Pendiente", "Precio": pf, "Gramos": gms, "Horas": hrs, "Notas": nn, "Prioridad": prio, "Entrega": ent.strftime("%d/%m/%Y"), "Telefono": ntel}])
-            df_p = pd.concat([df_p, nueva], ignore_index=True); df_f = pd.concat([df_f, nueva.drop(columns=['Estado'])], ignore_index=True)
-            conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f); st.rerun()
+    st.markdown("### Crear Nuevo Trabajo")
+    # El reset_key obliga a vaciar el formulario al guardar
+    with st.container(key=f"container_nuevo_{st.session_state.reset_key}"):
+        with st.form("form_nuevo_trabajo", clear_on_submit=True):
+            c1, c2 = st.columns(2)
+            nc = c1.text_input("Nombre del Cliente")
+            ntel = c2.text_input("WhatsApp (con 34 delante)")
+            np = st.text_input("Nombre de la Pieza")
+            c3, c4, c5 = st.columns(3)
+            gms = c3.number_input("Gramos", 0.0)
+            hrs = c4.number_input("Horas", 0.0)
+            prio = c5.selectbox("Prioridad", PRIORIDADES, index=1)
+            ent = st.date_input("Fecha de Entrega", value=datetime.now())
+            mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200], value=100)
+            pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + mgn / 100)
+            st.write(f"### TOTAL ESTIMADO: {pf:.2f} €")
+            nn = st.text_area("Notas / Detalles")
+            if st.form_submit_button("GUARDAR EN BASE DE DATOS"):
+                if nc and np:
+                    id_n = datetime.now().strftime("%y%m%d%H%M%S")
+                    nueva = pd.DataFrame([{"ID": id_n, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": nc, "Pieza": np, "Estado": "Pendiente", "Precio": pf, "Gramos": gms, "Horas": hrs, "Notas": nn, "Prioridad": prio, "Entrega": ent.strftime("%d/%m/%Y"), "Telefono": ntel}])
+                    df_p_new = pd.concat([df_p, nueva], ignore_index=True)
+                    df_f_new = pd.concat([df_f, nueva.drop(columns=['Estado'])], ignore_index=True)
+                    conn.update(worksheet="Pedidos", data=df_p_new)
+                    conn.update(worksheet="Facturas", data=df_f_new)
+                    st.session_state.df_p, st.session_state.df_f = df_p_new, df_f_new # Actualizar memoria
+                    st.session_state.reset_key += 1 # Forzar limpieza visual
+                    st.success("¡Trabajo guardado correctamente!")
+                    st.rerun()
+                else:
+                    st.error("Por favor, rellena el Cliente y la Pieza.")
 
 # --- 10. FACTURAS ---
 elif st.session_state.sec == "FACTURAS":
-    busc = st.text_input("🔍 Buscar...").lower().strip()
+    busc = st.text_input("🔍 Buscar Factura...").lower().strip()
     items = df_f[df_f['Cliente'].str.lower().str.contains(busc) | df_f['Pieza'].str.lower().str.contains(busc)] if busc else df_f
     for _, r in items.sort_values(by="ID", ascending=False).iterrows():
         st.markdown(card_html(r), unsafe_allow_html=True)
-        st.download_button("📩 PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"f_{r['ID']}")
+        st.download_button("📩 Descargar PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"fct_{r['ID']}")
         st.divider()
 
-# --- 11. DASHBOARD EJECUTIVO (RESTAURADO) ---
+# --- 11. DASHBOARD ---
 elif st.session_state.sec == "STATS":
     st.markdown('<p class="titulo-seccion">Dashboard Ejecutivo VYE 3D</p>', unsafe_allow_html=True)
     if not df_f.empty:
         df_s = df_f.copy()
         total_v = df_s['Precio'].sum(); total_g, total_h = df_s['Gramos'].sum(), df_s['Horas'].sum()
-        # Costes según tu factura y máquinas
         coste_m = total_g * 0.024; coste_maquina = total_h * 0.20
         beneficio_n = total_v - (coste_m + coste_maquina)
 
