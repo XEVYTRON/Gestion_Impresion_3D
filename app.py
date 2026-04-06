@@ -12,7 +12,7 @@ try:
 except:
     PASSWORD_APP = "xevy2024"
 
-# --- 2. UTILIDADES DE PDF (VYE 3D CON CONTACTO ACTUALIZADO) ---
+# --- 2. UTILIDADES DE PDF RE-DISEÑADAS (VYE 3D PREMIUM COMPACTA Y ROBUSTA) ---
 def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, horas=0):
     pdf = FPDF()
     pdf.add_page()
@@ -43,20 +43,20 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.set_draw_color(r_corp, g_corp, b_corp)
     pdf.set_line_width(1)
     pdf.line(10, 35, 200, 35)
-    pdf.ln(15)
+    pdf.ln(12) # Espacio reducido para compactar
 
     # --- INFORMACIÓN CLIENTE Y FECHA ---
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(100, 7, "PARA:", ln=False)
     pdf.cell(0, 7, "DETALLES:", ln=True)
     
-    pdf.set_font("Arial", '', 11)
+    pdf.set_font("Arial", 'B', 11) # Aumentado grosor de datos
     def format_es(texto):
         return str(texto).encode('latin-1', 'replace').decode('latin-1')
 
     pdf.cell(100, 6, format_es(cliente), ln=False)
     pdf.cell(0, 6, f"Fecha: {fecha}", ln=True)
-    pdf.ln(10)
+    pdf.ln(8) # Espacio reducido
 
     # --- TABLA DE TRABAJO ---
     pdf.set_fill_color(r_corp, g_corp, b_corp)
@@ -69,14 +69,16 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.ln(8)
 
     pdf.set_text_color(0)
-    pdf.set_font("Arial", '', 10)
+    pdf.set_font("Arial", '', 10) # Concepto normal para legibilidad larga
     pdf.set_draw_color(230)
-    pdf.cell(90, 12, format_es(f" {pieza}"), border='B')
-    pdf.cell(30, 12, f" {gramos} g", border='B', align='C')
-    pdf.cell(30, 12, f" {horas} h", border='B', align='C')
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(40, 12, f" {total:.2f} EUR ", border='B', align='R')
-    pdf.ln(15)
+    pdf.cell(90, 10, format_es(f" {pieza}"), border='B')
+    
+    pdf.set_font("Arial", 'B', 10) # Aumentado grosor de datos tecnicos
+    pdf.cell(30, 10, f" {gramos} g", border='B', align='C')
+    pdf.cell(30, 10, f" {horas} h", border='B', align='C')
+    
+    pdf.cell(40, 10, f" {total:.2f} EUR ", border='B', align='R')
+    pdf.ln(12)
 
     # --- NOTAS ---
     nota_limpia = str(notas).strip()
@@ -84,24 +86,33 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
         pdf.set_font("Arial", 'B', 10)
         pdf.set_text_color(r_corp, g_corp, b_corp)
         pdf.cell(0, 7, "OBSERVACIONES:", ln=True)
-        pdf.set_font("Arial", 'I', 10)
+        # Cambiado de Italic Normal a Italic Bold (IB)
+        pdf.set_font("Arial", 'IB', 10) 
         pdf.set_text_color(50)
         pdf.multi_cell(0, 6, format_es(nota_limpia))
-        pdf.ln(10)
+        pdf.ln(8) # Espacio reducido
 
     # --- RESUMEN FINAL ---
-    pdf.set_y(-60)
+    # Eliminado set_y absoluto para compactar en una sola hoja
+    pdf.ln(10) # Pequeño espacio antes del total
     pdf.set_font("Arial", 'B', 14)
     pdf.set_fill_color(245, 245, 245)
+    
+    current_y = pdf.get_y()
+    if current_y > 220: # Seguro para no pisar el pie de pagina
+        pdf.add_page()
+        pdf.set_y(20)
+        
     pdf.cell(130, 12, "", border=0)
     pdf.cell(60, 12, format_es(f" TOTAL A PAGAR: {total:.2f} EUR "), border=0, fill=True, align='R')
 
-    # --- PIE DE PÁGINA (DATOS ACTUALIZADOS) ---
-    pdf.set_y(-35)
-    pdf.set_font("Arial", 'I', 8)
+    # --- PIE DE PÁGINA (DATOS ACTUALIZADOS Y COMPACTADOS) ---
+    pdf.set_y(-35) # Fijado al final de la pagina
+    # Cambiado de Italic Normal a Italic Bold (IB)
+    pdf.set_font("Arial", 'IB', 8) 
     pdf.set_text_color(150)
     pdf.cell(0, 5, format_es("Gracias por confiar en VYE 3D para tus proyectos de fabricación aditiva."), align='C', ln=True)
-    pdf.set_font("Arial", 'B', 8)
+    pdf.set_font("Arial", 'B', 8) # Grosor aumentado
     pdf.cell(0, 5, "Instagram: @vye3d  |  Email: vye3d@hotmail.com", align='C', ln=True)
     pdf.cell(0, 5, "Contacto: 660211456 / 625375222", align='C')
 
@@ -311,6 +322,8 @@ elif st.session_state.seccion == "FACTURAS":
     for i, r in items_f.iterrows():
         with st.container():
             st.markdown(card_html(r['Fecha'], r['ID'], r['Cliente'], r['Pieza'], str(r['Notas']).strip(), float(r['Precio'])), unsafe_allow_html=True)
+            
+            # --- BOTÓN PDF ACTUALIZADO EN HISTORIAL ---
             pdf_hist = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Gramos'], r['Horas'])
             st.download_button("PDF 📩", data=pdf_hist, file_name=f"F_{r['Cliente']}.pdf", key=f"ph_{r['ID']}")
             st.divider()
