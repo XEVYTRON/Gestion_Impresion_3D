@@ -12,7 +12,7 @@ try:
 except:
     PASSWORD_APP = "xevy2024"
 
-# --- 2. UTILIDADES DE PDF RE-DISEÑADAS (VYE 3D PREMIUM COMPACTA Y ROBUSTA) ---
+# --- 2. UTILIDADES DE PDF (VYE 3D - EDICIÓN HOJA ÚNICA Y ALINEACIÓN) ---
 def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, horas=0):
     pdf = FPDF()
     pdf.add_page()
@@ -22,16 +22,16 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     
     # --- CABECERA ---
     try:
-        pdf.image("image_7.png", 10, 8, 25)
-        pdf.set_x(40)
+        pdf.image("image_7.png", 10, 8, 22)
+        pdf.set_x(35)
     except:
-        pdf.set_font("Arial", 'B', 25)
+        pdf.set_font("Arial", 'B', 22)
         pdf.set_text_color(r_corp, g_corp, b_corp)
         pdf.cell(30, 20, "VYE")
         pdf.set_text_color(0)
-        pdf.set_x(40)
+        pdf.set_x(35)
 
-    pdf.set_font("Arial", 'B', 20)
+    pdf.set_font("Arial", 'B', 18)
     pdf.cell(100, 10, "VYE 3D - SERVICIOS", ln=False)
     
     pdf.set_font("Arial", 'B', 10)
@@ -39,82 +39,75 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.cell(0, 10, f"FACTURA: #{id_factura}", ln=True, align='R')
     pdf.set_text_color(0)
 
-    # Línea decorativa
+    # LÍNEA MORADA (Posición fija para evitar solapamiento)
     pdf.set_draw_color(r_corp, g_corp, b_corp)
-    pdf.set_line_width(1)
-    pdf.line(10, 35, 200, 35)
-    pdf.ln(12) # Espacio reducido para compactar
+    pdf.set_line_width(0.8)
+    pdf.line(10, 32, 200, 32)
+    
+    # SALTO TRAS LA LÍNEA
+    pdf.set_y(38) 
 
     # --- INFORMACIÓN CLIENTE Y FECHA ---
-    pdf.set_font("Arial", 'B', 11)
-    pdf.cell(100, 7, "PARA:", ln=False)
-    pdf.cell(0, 7, "DETALLES:", ln=True)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(100, 6, "PARA:", ln=False)
+    pdf.cell(0, 6, "DETALLES DE FECHA:", ln=True)
     
-    pdf.set_font("Arial", 'B', 11) # Aumentado grosor de datos
+    pdf.set_font("Arial", 'B', 11) # Grosor en datos del cliente
     def format_es(texto):
         return str(texto).encode('latin-1', 'replace').decode('latin-1')
 
     pdf.cell(100, 6, format_es(cliente), ln=False)
-    pdf.cell(0, 6, f"Fecha: {fecha}", ln=True)
-    pdf.ln(8) # Espacio reducido
+    pdf.cell(0, 6, f"{fecha}", ln=True)
+    pdf.ln(6) 
 
-    # --- TABLA DE TRABAJO ---
+    # --- TABLA DE TRABAJO (Compactada) ---
     pdf.set_fill_color(r_corp, g_corp, b_corp)
     pdf.set_text_color(255)
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(90, 8, " CONCEPTO / PIEZA", border=0, fill=True)
-    pdf.cell(30, 8, " GRAMOS", border=0, fill=True, align='C')
-    pdf.cell(30, 8, " HORAS", border=0, fill=True, align='C')
-    pdf.cell(40, 8, " TOTAL", border=0, fill=True, align='R')
-    pdf.ln(8)
+    pdf.cell(90, 7, " CONCEPTO / PIEZA", border=0, fill=True)
+    pdf.cell(30, 7, " GRAMOS", border=0, fill=True, align='C')
+    pdf.cell(30, 7, " HORAS", border=0, fill=True, align='C')
+    pdf.cell(40, 7, " TOTAL", border=0, fill=True, align='R')
+    pdf.ln(7)
 
     pdf.set_text_color(0)
-    pdf.set_font("Arial", '', 10) # Concepto normal para legibilidad larga
-    pdf.set_draw_color(230)
-    pdf.cell(90, 10, format_es(f" {pieza}"), border='B')
-    
-    pdf.set_font("Arial", 'B', 10) # Aumentado grosor de datos tecnicos
-    pdf.cell(30, 10, f" {gramos} g", border='B', align='C')
-    pdf.cell(30, 10, f" {horas} h", border='B', align='C')
-    
-    pdf.cell(40, 10, f" {total:.2f} EUR ", border='B', align='R')
+    pdf.set_font("Arial", 'B', 10) # Grosor en la tabla
+    pdf.set_draw_color(220)
+    pdf.cell(90, 9, format_es(f" {pieza}"), border='B')
+    pdf.cell(30, 9, f" {gramos} g", border='B', align='C')
+    pdf.cell(30, 9, f" {horas} h", border='B', align='C')
+    pdf.cell(40, 9, f" {total:.2f} EUR ", border='B', align='R')
     pdf.ln(12)
 
-    # --- NOTAS ---
+    # --- NOTAS (Grosor extra) ---
     nota_limpia = str(notas).strip()
     if nota_limpia and nota_limpia.lower() != 'nan':
         pdf.set_font("Arial", 'B', 10)
         pdf.set_text_color(r_corp, g_corp, b_corp)
         pdf.cell(0, 7, "OBSERVACIONES:", ln=True)
-        # Cambiado de Italic Normal a Italic Bold (IB)
-        pdf.set_font("Arial", 'IB', 10) 
+        pdf.set_font("Arial", 'B', 10) # Todo en negrita
         pdf.set_text_color(50)
-        pdf.multi_cell(0, 6, format_es(nota_limpia))
-        pdf.ln(8) # Espacio reducido
+        pdf.multi_cell(0, 5, format_es(nota_limpia))
+        pdf.ln(8)
 
-    # --- RESUMEN FINAL ---
-    # Eliminado set_y absoluto para compactar en una sola hoja
-    pdf.ln(10) # Pequeño espacio antes del total
-    pdf.set_font("Arial", 'B', 14)
-    pdf.set_fill_color(245, 245, 245)
-    
-    current_y = pdf.get_y()
-    if current_y > 220: # Seguro para no pisar el pie de pagina
+    # --- TOTAL ---
+    # Solo salta de página si estamos al final de verdad (250mm de 297mm)
+    if pdf.get_y() > 250:
         pdf.add_page()
-        pdf.set_y(20)
-        
-    pdf.cell(130, 12, "", border=0)
-    pdf.cell(60, 12, format_es(f" TOTAL A PAGAR: {total:.2f} EUR "), border=0, fill=True, align='R')
+    
+    pdf.set_font("Arial", 'B', 13)
+    pdf.set_fill_color(245, 245, 245)
+    pdf.cell(125, 10, "", border=0)
+    pdf.cell(65, 10, format_es(f" TOTAL A PAGAR: {total:.2f} EUR "), border=0, fill=True, align='R')
 
-    # --- PIE DE PÁGINA (DATOS ACTUALIZADOS Y COMPACTADOS) ---
-    pdf.set_y(-35) # Fijado al final de la pagina
-    # Cambiado de Italic Normal a Italic Bold (IB)
-    pdf.set_font("Arial", 'IB', 8) 
-    pdf.set_text_color(150)
-    pdf.cell(0, 5, format_es("Gracias por confiar en VYE 3D para tus proyectos de fabricación aditiva."), align='C', ln=True)
-    pdf.set_font("Arial", 'B', 8) # Grosor aumentado
-    pdf.cell(0, 5, "Instagram: @vye3d  |  Email: vye3d@hotmail.com", align='C', ln=True)
-    pdf.cell(0, 5, "Contacto: 660211456 / 625375222", align='C')
+    # --- PIE DE PÁGINA (Fijo al fondo, muy robusto) ---
+    pdf.set_y(-30) 
+    pdf.set_font("Arial", 'B', 8) 
+    pdf.set_text_color(120)
+    pdf.cell(0, 4, format_es("Gracias por confiar en VYE 3D para tus proyectos de fabricación aditiva."), align='C', ln=True)
+    pdf.set_text_color(r_corp, g_corp, b_corp)
+    pdf.cell(0, 4, "Instagram: @vye3d  |  Email: vye3d@hotmail.com", align='C', ln=True)
+    pdf.cell(0, 4, "Contacto: 660211456 / 625375222", align='C')
 
     return pdf.output(dest="S").encode("latin-1")
 
@@ -201,7 +194,6 @@ def card_html(fecha, id_job, cliente, pieza, nota, precio, badge=""):
     html_badge = f'<div class="badge-estado">{badge}</div>' if badge else ""
     return f'<div class="card-container">{html_badge}<p class="card-fecha">{fecha} | ID: {id_job}</p><p class="card-nombre">{cliente}</p><p class="card-pieza">Pieza: {pieza}</p>{html_nota}<p class="card-precio">Precio: {precio:.2f} €</p></div>'
 
-# TÍTULO CORPORATIVO VYE 3D
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900; margin-top: -30px; margin-bottom: 20px;'>VYE 3D</h1>", unsafe_allow_html=True)
 
 # --- 7. NAVEGACIÓN ---
@@ -231,7 +223,6 @@ if st.session_state.seccion == "TRABAJOS":
         id_job = str(r['ID'])
         n_limpia = str(r['Notas']).strip()
         badge = r['Estado'] if texto_buscar else ""
-
         with st.container():
             st.markdown(card_html(r['Fecha'], id_job, r['Cliente'], r['Pieza'], n_limpia, float(r['Precio']), badge), unsafe_allow_html=True)
             upd_est = st.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"s_{id_job}")
@@ -239,7 +230,6 @@ if st.session_state.seccion == "TRABAJOS":
                 df_p.at[idx, "Estado"] = upd_est
                 conn.update(worksheet="Pedidos", data=df_p)
                 st.session_state.df_pedidos = df_p; st.rerun()
-
             with st.expander("MODIFICAR ⚙️"):
                 with st.form(f"fm_{id_job}"):
                     ec = st.text_input("Cliente", value=r['Cliente'])
@@ -254,27 +244,8 @@ if st.session_state.seccion == "TRABAJOS":
                         valores_upd = [ec, ep, epr, str(en).strip(), egr, ehr]
                         df_p.loc[df_p['ID'].astype(str) == id_job, columnas_upd] = valores_upd
                         df_f.loc[df_f['ID'].astype(str) == id_job, columnas_upd] = valores_upd
-                        conn.update(worksheet="Pedidos", data=df_p)
-                        conn.update(worksheet="Facturas", data=df_f)
-                        st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f
-                        st.rerun()
-
-                ck = f"dk_{id_job}"
-                if ck not in st.session_state: st.session_state[ck] = False
-                if not st.session_state[ck]:
-                    if st.button("🗑️ ELIMINAR", key=f"bd_{id_job}"):
-                        st.session_state[ck] = True; st.rerun()
-                else:
-                    st.warning("¿Borrar?"); c1, c2 = st.columns(2)
-                    if c1.button("SÍ ✅", key=f"cs_{id_job}"):
-                        df_p = df_p[df_p['ID'].astype(str) != id_job]
-                        df_f = df_f[df_f['ID'].astype(str) != id_job]
                         conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f)
-                        st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f
-                        st.session_state[ck] = False; st.rerun()
-                    if c2.button("NO ❌", key=f"cn_{id_job}"):
-                        st.session_state[ck] = False; st.rerun()
-            
+                        st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f; st.rerun()
             pdf_trabajo = crear_pdf(id_job, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Gramos'], r['Horas'])
             st.download_button("PDF 📩", data=pdf_trabajo, file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_job}")
         st.divider()
@@ -318,12 +289,9 @@ elif st.session_state.seccion == "FACTURAS":
     else: items_f = df_f.sort_values(by="ID", ascending=False)
     if bf:
         items_f = items_f[items_f['Cliente'].str.lower().str.contains(bf, na=False) | items_f['Pieza'].str.lower().str.contains(bf, na=False)]
-    if not items_f.empty: st.info(f"📦 {len(items_f)} facturas — Total: **{items_f['Precio'].sum():.2f} €**")
     for i, r in items_f.iterrows():
         with st.container():
             st.markdown(card_html(r['Fecha'], r['ID'], r['Cliente'], r['Pieza'], str(r['Notas']).strip(), float(r['Precio'])), unsafe_allow_html=True)
-            
-            # --- BOTÓN PDF ACTUALIZADO EN HISTORIAL ---
             pdf_hist = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Gramos'], r['Horas'])
             st.download_button("PDF 📩", data=pdf_hist, file_name=f"F_{r['Cliente']}.pdf", key=f"ph_{r['ID']}")
             st.divider()
@@ -337,34 +305,21 @@ elif st.session_state.seccion == "ESTADISTICAS":
         df_s['Gramos'] = pd.to_numeric(df_s['Gramos'], errors='coerce').fillna(0.0)
         df_s['Horas'] = pd.to_numeric(df_s['Horas'], errors='coerce').fillna(0.0)
         df_s['Fecha_DT'] = pd.to_datetime(df_s['Fecha'], format="%d/%m/%Y", errors='coerce')
-
         total_v = df_s['Precio'].sum()
-        total_g = df_s['Gramos'].sum()
-        total_h = df_s['Horas'].sum()
+        total_g, total_h = df_s['Gramos'].sum(), df_s['Horas'].sum()
         coste_m = total_g * 0.024
         coste_operativo_h = 0.20 
-        coste_maquina = total_h * coste_operativo_h
-        beneficio_n = total_v - (coste_m + coste_maquina)
-
-        st.markdown("### 💰 Finanzas Reales")
+        beneficio_n = total_v - (coste_m + (total_h * coste_operativo_h))
         m1, m2, m3 = st.columns(3)
         m1.metric("Ingresos Totales", f"{total_v:.2f} €")
-        m2.metric("Beneficio Neto Est.", f"{beneficio_n:.2f} €", delta=f"{((beneficio_n/total_v)*100) if total_v > 0 else 0:.1f}% Margen")
+        m2.metric("Beneficio Neto Est.", f"{beneficio_n:.2f} €")
         m3.metric("Ticket Medio", f"{(total_v/len(df_s)):.2f} €")
-
-        st.markdown("### ⚙️ Rendimiento Taller")
         m4, m5, m6 = st.columns(3)
         m4.metric("Filamento Gastado", f"{total_g/1000:.2f} kg")
         m5.metric("Tiempo de Vuelo", f"{total_h:.1f} h")
         m6.metric("Trabajos", len(df_s))
-
-        st.divider(); st.markdown("**Evolución Mensual**")
-        df_chart = df_s.dropna(subset=['Fecha_DT']).set_index('Fecha_DT')
+        st.divider(); df_chart = df_s.dropna(subset=['Fecha_DT']).set_index('Fecha_DT')
         if not df_chart.empty:
             try: vm = df_chart.resample('ME')['Precio'].sum()
             except: vm = df_chart.resample('M')['Precio'].sum()
             st.bar_chart(vm)
-        st.divider(); st.markdown("**Ranking de Clientes (Top 5)**")
-        ranking = df_s.groupby('Cliente').agg(Total=('Precio', 'sum'), Trabajos=('Precio', 'count')).sort_values('Total', ascending=False).head(5).reset_index()
-        for i, r in ranking.iterrows():
-            st.markdown(f'<div class="stat-card"><p class="stat-cliente">#{i+1} 👤 {r["Cliente"]}</p><p class="stat-detalle">{int(r["Trabajos"])} trabajos</p><p class="stat-total">Total: {r["Total"]:.2f} €</p></div>', unsafe_allow_html=True)
