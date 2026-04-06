@@ -6,35 +6,105 @@ from fpdf import FPDF
 from PIL import Image
 from io import BytesIO
 
-# --- 1. SEGURIDAD (SECRETS + URL) ---
+# --- 1. SEGURIDAD ---
 try:
     PASSWORD_APP = st.secrets["password"]
 except:
     PASSWORD_APP = "xevy2024"
 
-# --- 2. UTILIDADES DE PDF ---
-def crear_pdf(id_factura, fecha, cliente, pieza, total, notas=""):
+# --- 2. UTILIDADES DE PDF RE-DISEÑADAS (VYE 3D PREMIUM) ---
+def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, horas=0):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="VYE 3D - FACTURA", ln=True, align='C')
-    pdf.ln(5)
-    pdf.set_font("Arial", '', 11)
+    
+    # Colores corporativos (Morado #6f42c1)
+    r_corp, g_corp, b_corp = 111, 66, 193
+    
+    # --- CABECERA ---
+    try:
+        pdf.image("image_7.png", 10, 8, 25)
+        pdf.set_x(40)
+    except:
+        pdf.set_font("Arial", 'B', 25)
+        pdf.set_text_color(r_corp, g_corp, b_corp)
+        pdf.cell(30, 20, "VYE")
+        pdf.set_text_color(0)
+        pdf.set_x(40)
 
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(100, 10, "VYE 3D - SERVICIOS", ln=False)
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.set_text_color(100)
+    pdf.cell(0, 10, f"FACTURA: #{id_factura}", ln=True, align='R')
+    pdf.set_text_color(0)
+
+    # Línea decorativa
+    pdf.set_draw_color(r_corp, g_corp, b_corp)
+    pdf.set_line_width(1)
+    pdf.line(10, 35, 200, 35)
+    pdf.ln(15)
+
+    # --- INFORMACIÓN CLIENTE Y FECHA ---
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(100, 7, "PARA:", ln=False)
+    pdf.cell(0, 7, "DETALLES:", ln=True)
+    
+    pdf.set_font("Arial", '', 11)
     def format_es(texto):
         return str(texto).encode('latin-1', 'replace').decode('latin-1')
 
-    pdf.cell(200, 7, txt=format_es(f"ID: {id_factura} | Fecha: {fecha}"), ln=True)
-    pdf.cell(200, 7, txt=format_es(f"Cliente: {cliente}"), ln=True)
-    pdf.cell(200, 7, txt=format_es(f"Trabajo: {pieza}"), ln=True)
+    pdf.cell(100, 6, format_es(cliente), ln=False)
+    pdf.cell(0, 6, f"Fecha: {fecha}", ln=True)
+    pdf.ln(10)
 
+    # --- TABLA DE TRABAJO ---
+    # Encabezado de tabla
+    pdf.set_fill_color(r_corp, g_corp, b_corp)
+    pdf.set_text_color(255)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(90, 8, " CONCEPTO / PIEZA", border=0, fill=True)
+    pdf.cell(30, 8, " GRAMOS", border=0, fill=True, align='C')
+    pdf.cell(30, 8, " HORAS", border=0, fill=True, align='C')
+    pdf.cell(40, 8, " TOTAL", border=0, fill=True, align='R')
+    pdf.ln(8)
+
+    # Contenido de tabla
+    pdf.set_text_color(0)
+    pdf.set_font("Arial", '', 10)
+    pdf.set_draw_color(230)
+    pdf.cell(90, 12, format_es(f" {pieza}"), border='B')
+    pdf.cell(30, 12, f" {gramos} g", border='B', align='C')
+    pdf.cell(30, 12, f" {horas} h", border='B', align='C')
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(40, 12, f" {total:.2f} EUR ", border='B', align='R')
+    pdf.ln(15)
+
+    # --- NOTAS ---
     nota_limpia = str(notas).strip()
     if nota_limpia and nota_limpia.lower() != 'nan':
-        pdf.ln(2); pdf.set_font("Arial", 'I', 10)
-        pdf.multi_cell(200, 6, txt=format_es(f"Notas: {nota_limpia}"))
+        pdf.set_font("Arial", 'B', 10)
+        pdf.set_text_color(r_corp, g_corp, b_corp)
+        pdf.cell(0, 7, "OBSERVACIONES:", ln=True)
+        pdf.set_font("Arial", 'I', 10)
+        pdf.set_text_color(50)
+        pdf.multi_cell(0, 6, format_es(nota_limpia))
+        pdf.ln(10)
 
-    pdf.ln(10); pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt=f"TOTAL: {total:.2f} Euros", ln=True)
+    # --- RESUMEN FINAL ---
+    pdf.set_y(-50)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.set_fill_color(245, 245, 245)
+    pdf.cell(130, 12, "", border=0)
+    pdf.cell(60, 12, format_es(f" TOTAL A PAGAR: {total:.2f} EUR "), border=0, fill=True, align='R')
+
+    # --- PIE DE PÁGINA ---
+    pdf.set_y(-25)
+    pdf.set_font("Arial", 'I', 8)
+    pdf.set_text_color(150)
+    pdf.cell(0, 10, "Gracias por confiar en VYE 3D para tus proyectos de fabricacion aditiva.", align='C', ln=True)
+    pdf.cell(0, 5, "vye3d.streamlit.app", align='C')
+
     return pdf.output(dest="S").encode("latin-1")
 
 # --- 3. CONFIGURACIÓN ---
@@ -120,7 +190,7 @@ def card_html(fecha, id_job, cliente, pieza, nota, precio, badge=""):
     html_badge = f'<div class="badge-estado">{badge}</div>' if badge else ""
     return f'<div class="card-container">{html_badge}<p class="card-fecha">{fecha} | ID: {id_job}</p><p class="card-nombre">{cliente}</p><p class="card-pieza">Pieza: {pieza}</p>{html_nota}<p class="card-precio">Precio: {precio:.2f} €</p></div>'
 
-# --- CABECERA CORPORATIVA ---
+# --- TÍTULO CORPORATIVO ---
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900; margin-top: -30px; margin-bottom: 20px;'>VYE 3D</h1>", unsafe_allow_html=True)
 
 # --- 7. NAVEGACIÓN ---
@@ -163,14 +233,11 @@ if st.session_state.seccion == "TRABAJOS":
                 with st.form(f"fm_{id_job}"):
                     ec = st.text_input("Cliente", value=r['Cliente'])
                     ep = st.text_input("Pieza", value=r['Pieza'])
-                    
                     c_edit_1, c_edit_2 = st.columns(2)
                     egr = c_edit_1.number_input("Gramos", value=float(r['Gramos']), min_value=0.0)
                     ehr = c_edit_2.number_input("Horas", value=float(r['Horas']), min_value=0.0)
-                    
                     epr = st.number_input("Precio Final (€)", value=float(r['Precio']))
                     en = st.text_area("Notas", value=n_limpia)
-                    
                     if st.form_submit_button("Guardar Cambios"):
                         columnas_upd = ['Cliente', 'Pieza', 'Precio', 'Notas', 'Gramos', 'Horas']
                         valores_upd = [ec, ep, epr, str(en).strip(), egr, ehr]
@@ -196,7 +263,10 @@ if st.session_state.seccion == "TRABAJOS":
                         st.session_state[ck] = False; st.rerun()
                     if c2.button("NO ❌", key=f"cn_{id_job}"):
                         st.session_state[ck] = False; st.rerun()
-            st.download_button("PDF 📩", data=crear_pdf(id_job, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas']), file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_job}")
+            
+            # --- BOTÓN PDF ACTUALIZADO ---
+            pdf_trabajo = crear_pdf(id_job, r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Gramos'], r['Horas'])
+            st.download_button("PDF 📩", data=pdf_trabajo, file_name=f"F_{r['Cliente']}.pdf", key=f"pdf_{id_job}")
         st.divider()
 
 # --- 9. VISTA: NUEVO TRABAJO ---
@@ -209,7 +279,6 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
         gms = cg.number_input("Gramos", min_value=0.0, key=f"ig_{st.session_state.form_reset_key}")
         hrs = ch.number_input("Horas", min_value=0.0, key=f"ih_{st.session_state.form_reset_key}")
         mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200, 300], value=100, key=f"im_{st.session_state.form_reset_key}")
-        # PRECIO COBRADO AL CLIENTE (1€ POR HORA)
         pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + mgn / 100)
         st.markdown(f"### TOTAL ESTIMADO: {pf:.2f} €")
         nn = st.text_area("Notas", key=f"in_{st.session_state.form_reset_key}")
@@ -243,7 +312,10 @@ elif st.session_state.seccion == "FACTURAS":
     for i, r in items_f.iterrows():
         with st.container():
             st.markdown(card_html(r['Fecha'], r['ID'], r['Cliente'], r['Pieza'], str(r['Notas']).strip(), float(r['Precio'])), unsafe_allow_html=True)
-            st.download_button("PDF 📩", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas']), file_name=f"F_{r['Cliente']}.pdf", key=f"ph_{r['ID']}")
+            
+            # --- BOTÓN PDF ACTUALIZADO EN HISTORIAL ---
+            pdf_hist = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas'], r['Gramos'], r['Horas'])
+            st.download_button("PDF 📩", data=pdf_hist, file_name=f"F_{r['Cliente']}.pdf", key=f"ph_{r['ID']}")
             st.divider()
 
 # --- 11. ESTADÍSTICAS ---
@@ -259,10 +331,8 @@ elif st.session_state.seccion == "ESTADISTICAS":
         total_v = df_s['Precio'].sum()
         total_g = df_s['Gramos'].sum()
         total_h = df_s['Horas'].sum()
-        
-        # COSTES REALES (LUZ FACTURA + MANTENIMIENTO)
         coste_m = total_g * 0.024
-        coste_operativo_h = 0.20 # Luz (~0.04€) + Margen repuestos/desgaste (~0.16€)
+        coste_operativo_h = 0.20 
         coste_maquina = total_h * coste_operativo_h
         beneficio_n = total_v - (coste_m + coste_maquina)
 
