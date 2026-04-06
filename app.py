@@ -120,7 +120,7 @@ def card_html(fecha, id_job, cliente, pieza, nota, precio, badge=""):
     html_badge = f'<div class="badge-estado">{badge}</div>' if badge else ""
     return f'<div class="card-container">{html_badge}<p class="card-fecha">{fecha} | ID: {id_job}</p><p class="card-nombre">{cliente}</p><p class="card-pieza">Pieza: {pieza}</p>{html_nota}<p class="card-precio">Precio: {precio:.2f} €</p></div>'
 
-# --- TÍTULO CORPORATIVO ---
+# TÍTULO CORPORATIVO VYE 3D
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900; margin-top: -30px; margin-bottom: 20px;'>VYE 3D</h1>", unsafe_allow_html=True)
 
 # --- 7. NAVEGACIÓN ---
@@ -161,14 +161,29 @@ if st.session_state.seccion == "TRABAJOS":
 
             with st.expander("MODIFICAR ⚙️"):
                 with st.form(f"fm_{id_job}"):
-                    ec, ep = st.text_input("Cliente", value=r['Cliente']), st.text_input("Pieza", value=r['Pieza'])
-                    epr = st.number_input("Precio", value=float(r['Precio']))
+                    ec = st.text_input("Cliente", value=r['Cliente'])
+                    ep = st.text_input("Pieza", value=r['Pieza'])
+                    
+                    # --- NOVEDAD: EDITAR GRAMOS Y HORAS ---
+                    c_edit_1, c_edit_2 = st.columns(2)
+                    egr = c_edit_1.number_input("Gramos", value=float(r['Gramos']), min_value=0.0)
+                    ehr = c_edit_2.number_input("Horas", value=float(r['Horas']), min_value=0.0)
+                    
+                    epr = st.number_input("Precio Final (€)", value=float(r['Precio']))
                     en = st.text_area("Notas", value=n_limpia)
-                    if st.form_submit_button("Guardar"):
-                        df_p.loc[df_p['ID'].astype(str) == id_job, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [ec, ep, epr, str(en).strip()]
-                        df_f.loc[df_f['ID'].astype(str) == id_job, ['Cliente', 'Pieza', 'Precio', 'Notas']] = [ec, ep, epr, str(en).strip()]
-                        conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f)
-                        st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f; st.rerun()
+                    
+                    if st.form_submit_button("Guardar Cambios"):
+                        # Actualizamos Pedidos y Facturas con todos los datos, incluyendo los nuevos Gramos y Horas
+                        columnas_upd = ['Cliente', 'Pieza', 'Precio', 'Notas', 'Gramos', 'Horas']
+                        valores_upd = [ec, ep, epr, str(en).strip(), egr, ehr]
+                        
+                        df_p.loc[df_p['ID'].astype(str) == id_job, columnas_upd] = valores_upd
+                        df_f.loc[df_f['ID'].astype(str) == id_job, columnas_upd] = valores_upd
+                        
+                        conn.update(worksheet="Pedidos", data=df_p)
+                        conn.update(worksheet="Facturas", data=df_f)
+                        st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f
+                        st.success("¡Datos actualizados!"); st.rerun()
 
                 ck = f"dk_{id_job}"
                 if ck not in st.session_state: st.session_state[ck] = False
@@ -234,68 +249,44 @@ elif st.session_state.seccion == "FACTURAS":
             st.download_button("PDF 📩", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], float(r['Precio']), r['Notas']), file_name=f"F_{r['Cliente']}.pdf", key=f"ph_{r['ID']}")
             st.divider()
 
-# --- 11. ESTADÍSTICAS EVOLUCIONADAS ---
+# --- 11. ESTADÍSTICAS ---
 elif st.session_state.seccion == "ESTADISTICAS":
-    st.markdown('<p class="titulo-seccion">Dashboard Ejecutivo VYE 3D</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Dashboard de Negocio</p>', unsafe_allow_html=True)
     if not df_f.empty:
         df_s = df_f.copy()
-        # Asegurar números
         df_s['Precio'] = pd.to_numeric(df_s['Precio'], errors='coerce').fillna(0.0)
         df_s['Gramos'] = pd.to_numeric(df_s['Gramos'], errors='coerce').fillna(0.0)
         df_s['Horas'] = pd.to_numeric(df_s['Horas'], errors='coerce').fillna(0.0)
         df_s['Fecha_DT'] = pd.to_datetime(df_s['Fecha'], format="%d/%m/%Y", errors='coerce')
 
-        # --- CÁLCULOS DE NEGOCIO ---
-        total_ingresos = df_s['Precio'].sum()
-        total_gramos = df_s['Gramos'].sum()
-        total_horas = df_s['Horas'].sum()
+        total_v = df_s['Precio'].sum()
+        total_g = df_s['Gramos'].sum()
+        total_h = df_s['Horas'].sum()
         
-        # Estimación de costes (ajusta estos valores si quieres)
-        coste_material = total_gramos * 0.024  # 24€ el kilo
-        coste_luz_y_desgaste = total_horas * 0.15 # 0.15€ por hora de máquina
-        beneficio_neto = total_ingresos - (coste_material + coste_luz_y_desgaste)
+        # Cálculos de beneficio neto est.
+        coste_m = total_g * 0.024
+        coste_l = total_h * 0.15
+        beneficio_n = total_v - (coste_m + coste_l)
 
-        # --- FILA 1: MÉTRICAS FINANCIERAS ---
         st.markdown("### 💰 Finanzas")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Ingresos Totales", f"{total_ingresos:.2f} €")
-        c2.metric("Beneficio Neto (Est.)", f"{beneficio_neto:.2f} €", delta=f"{((beneficio_neto/total_ingresos)*100) if total_ingresos > 0 else 0:.1f}% Margen")
-        c3.metric("Ticket Medio", f"{(total_ingresos/len(df_s)):.2f} €")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Ingresos Totales", f"{total_v:.2f} €")
+        m2.metric("Beneficio Est.", f"{beneficio_n:.2f} €")
+        m3.metric("Ticket Medio", f"{(total_v/len(df_s)):.2f} €")
 
-        # --- FILA 2: MÉTRICAS DE TALLER ---
         st.markdown("### ⚙️ Producción")
-        c4, c5, c6 = st.columns(3)
-        c4.metric("Filamento Gastado", f"{total_gramos/1000:.2f} kg")
-        c5.metric("Tiempo de Máquina", f"{total_horas:.1f} h")
-        c6.metric("Trabajos Realizados", len(df_s))
+        m4, m5, m6 = st.columns(3)
+        m4.metric("Filamento", f"{total_g/1000:.2f} kg")
+        m5.metric("Tiempo Máquina", f"{total_h:.1f} h")
+        m6.metric("Trabajos", len(df_s))
 
-        st.divider()
-
-        # --- GRÁFICO DE EVOLUCIÓN ---
-        st.markdown("**Evolución de Ventas Mensuales**")
+        st.divider(); st.markdown("**Ventas por mes**")
         df_chart = df_s.dropna(subset=['Fecha_DT']).set_index('Fecha_DT')
         if not df_chart.empty:
             try: vm = df_chart.resample('ME')['Precio'].sum()
             except: vm = df_chart.resample('M')['Precio'].sum()
             st.bar_chart(vm)
-
-        st.divider()
-
-        # --- RANKING DE CLIENTES ---
-        st.markdown("**🏆 Ranking de Clientes (Top 5)**")
-        ranking = df_s.groupby('Cliente').agg(
-            Total=('Precio', 'sum'), 
-            Trabajos=('Precio', 'count'), 
-            Gramos=('Gramos', 'sum')
-        ).sort_values('Total', ascending=False).head(5).reset_index()
-
-        for i, r in ranking.iterrows():
-            st.markdown(f"""
-            <div class="stat-card">
-                <p class="stat-cliente">#{i+1} 👤 {r['Cliente']}</p>
-                <p class="stat-detalle">{int(r['Trabajos'])} pedidos realizados · {r['Gramos']/1000:.2f}kg impresos</p>
-                <p class="stat-total">Facturación total: {r['Total']:.2f} €</p>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("Aún no hay datos para mostrar estadísticas.")
+        st.divider(); st.markdown("**Ranking de clientes**")
+        ranking = df_s.groupby('Cliente').agg(Total=('Precio', 'sum'), Trabajos=('Precio', 'count')).sort_values('Total', ascending=False).head(5).reset_index()
+        for _, r in ranking.iterrows():
+            st.markdown(f'<div class="stat-card"><p class="stat-cliente">👤 {r["Cliente"]}</p><p class="stat-detalle">{int(r["Trabajos"])} trabajo(s)</p><p class="stat-total">Total: {r["Total"]:.2f} €</p></div>', unsafe_allow_html=True)
