@@ -12,7 +12,7 @@ try:
 except:
     PASSWORD_APP = "xevy2024"
 
-# --- 2. UTILIDADES DE PDF (VYE 3D - EDICIÓN HOJA ÚNICA Y ALINEACIÓN) ---
+# --- 2. UTILIDADES DE PDF (VYE 3D - HOJA ÚNICA TOTAL) ---
 def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, horas=0):
     pdf = FPDF()
     pdf.add_page()
@@ -39,12 +39,11 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.cell(0, 10, f"FACTURA: #{id_factura}", ln=True, align='R')
     pdf.set_text_color(0)
 
-    # LÍNEA MORADA (Posición fija para evitar solapamiento)
+    # LÍNEA MORADA
     pdf.set_draw_color(r_corp, g_corp, b_corp)
     pdf.set_line_width(0.8)
     pdf.line(10, 32, 200, 32)
     
-    # SALTO TRAS LA LÍNEA
     pdf.set_y(38) 
 
     # --- INFORMACIÓN CLIENTE Y FECHA ---
@@ -52,7 +51,7 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.cell(100, 6, "PARA:", ln=False)
     pdf.cell(0, 6, "DETALLES DE FECHA:", ln=True)
     
-    pdf.set_font("Arial", 'B', 11) # Grosor en datos del cliente
+    pdf.set_font("Arial", 'B', 11) 
     def format_es(texto):
         return str(texto).encode('latin-1', 'replace').decode('latin-1')
 
@@ -60,7 +59,7 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.cell(0, 6, f"{fecha}", ln=True)
     pdf.ln(6) 
 
-    # --- TABLA DE TRABAJO (Compactada) ---
+    # --- TABLA DE TRABAJO ---
     pdf.set_fill_color(r_corp, g_corp, b_corp)
     pdf.set_text_color(255)
     pdf.set_font("Arial", 'B', 10)
@@ -71,42 +70,42 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
     pdf.ln(7)
 
     pdf.set_text_color(0)
-    pdf.set_font("Arial", 'B', 10) # Grosor en la tabla
+    pdf.set_font("Arial", 'B', 10) 
     pdf.set_draw_color(220)
     pdf.cell(90, 9, format_es(f" {pieza}"), border='B')
     pdf.cell(30, 9, f" {gramos} g", border='B', align='C')
     pdf.cell(30, 9, f" {horas} h", border='B', align='C')
     pdf.cell(40, 9, f" {total:.2f} EUR ", border='B', align='R')
-    pdf.ln(12)
+    pdf.ln(10)
 
-    # --- NOTAS (Grosor extra) ---
-    nota_limpia = str(notas).strip()
+    # --- NOTAS ---
+    nota_limpia = str(notes).strip()
     if nota_limpia and nota_limpia.lower() != 'nan':
         pdf.set_font("Arial", 'B', 10)
         pdf.set_text_color(r_corp, g_corp, b_corp)
         pdf.cell(0, 7, "OBSERVACIONES:", ln=True)
-        pdf.set_font("Arial", 'B', 10) # Todo en negrita
+        pdf.set_font("Arial", 'B', 10)
         pdf.set_text_color(50)
         pdf.multi_cell(0, 5, format_es(nota_limpia))
-        pdf.ln(8)
+        pdf.ln(6)
 
     # --- TOTAL ---
-    # Solo salta de página si estamos al final de verdad (250mm de 297mm)
-    if pdf.get_y() > 250:
-        pdf.add_page()
-    
+    pdf.ln(5)
     pdf.set_font("Arial", 'B', 13)
     pdf.set_fill_color(245, 245, 245)
     pdf.cell(125, 10, "", border=0)
     pdf.cell(65, 10, format_es(f" TOTAL A PAGAR: {total:.2f} EUR "), border=0, fill=True, align='R')
 
-    # --- PIE DE PÁGINA (Fijo al fondo, muy robusto) ---
-    pdf.set_y(-30) 
+    # --- PIE DE PÁGINA (DATOS AGRUPADOS EN UNA SOLA HOJA) ---
+    # Colocamos el bloque de contacto un poco más arriba para asegurar la primera hoja
+    pdf.set_y(-38) 
     pdf.set_font("Arial", 'B', 8) 
     pdf.set_text_color(120)
     pdf.cell(0, 4, format_es("Gracias por confiar en VYE 3D para tus proyectos de fabricación aditiva."), align='C', ln=True)
     pdf.set_text_color(r_corp, g_corp, b_corp)
+    # Instagram y Email
     pdf.cell(0, 4, "Instagram: @vye3d  |  Email: vye3d@hotmail.com", align='C', ln=True)
+    # Teléfonos justo debajo
     pdf.cell(0, 4, "Contacto: 660211456 / 625375222", align='C')
 
     return pdf.output(dest="S").encode("latin-1")
