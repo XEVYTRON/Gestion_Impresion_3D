@@ -119,16 +119,11 @@ df_p, df_f = st.session_state.df_pedidos, st.session_state.df_facturas
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 PRIORIDADES = ["Baja", "Media", "Alta", "URGENTE"]
 
-# --- FUNCIÓN DE TARJETA UNIFICADA ---
+# --- FUNCIÓN DE TARJETA CORREGIDA (SIN ESPACIOS AL PRINCIPIO) ---
 def card_html(r):
     prio = str(r['Prioridad']).lower() if r['Prioridad'] else "media"
     entrega_txt = f"<p class='card-entrega'>⏱️ ENTREGA: {r['Entrega']}</p>" if r['Entrega'] else ""
-    return f"""<div class="card-container card-{prio}">
-        {entrega_txt}
-        <p class="card-nombre">{r['Cliente']}</p>
-        <p style='margin:0; font-weight:600;'>Pieza: {r['Pieza']}</p>
-        <p style='margin:0; font-size:16px; font-weight:bold;'>{r['Precio']:.2f} €</p>
-    </div>"""
+    return f'<div class="card-container card-{prio}">{entrega_txt}<p class="card-nombre">{r["Cliente"]}</p><p style="margin:0; font-weight:600;">Pieza: {r["Pieza"]}</p><p style="margin:0; font-size:16px; font-weight:bold;">{r["Precio"]:.2f} €</p></div>'
 
 # --- 6. ACCESO ---
 if 'autenticado' not in st.session_state: st.session_state.autenticado = False
@@ -162,19 +157,15 @@ if st.session_state.seccion == "TRABAJOS":
     
     items['prio_val'] = items['Prioridad'].map({"Baja":1, "Media":2, "Alta":3, "URGENTE":4}).fillna(2)
     for idx, r in items.sort_values(by="prio_val", ascending=False).iterrows():
-        # AQUÍ ES DONDE SE RENDERIZA EL HTML
         st.markdown(card_html(r), unsafe_allow_html=True)
-        
         c1, c2 = st.columns(2)
-        upd_est = c1.selectbox("Cambiar Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"e_{r['ID']}")
+        upd_est = c1.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"e_{r['ID']}")
         if upd_est != r['Estado']:
             df_p.at[idx, "Estado"] = upd_est
             conn.update(worksheet="Pedidos", data=df_p); st.rerun()
-        
         if r['Telefono']:
             msg = urllib.parse.quote(f"Hola {r['Cliente']}, tu pedido {r['Pieza']} de VYE 3D ya esta listo!")
             c2.link_button("🟢 WHATSAPP", f"https://wa.me/{r['Telefono']}?text={msg}")
-        
         with st.expander("GESTIÓN / PDF"):
             st.download_button("📩 FACTURA PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
             if st.button("🗑️ Eliminar", key=f"d_{r['ID']}"):
@@ -210,7 +201,6 @@ elif st.session_state.seccion == "FACTURAS":
     bf = st.text_input("🔍 Buscar Factura...").lower().strip()
     items = df_f[df_f['Cliente'].str.lower().str.contains(bf) | df_f['Pieza'].str.lower().str.contains(bf)] if bf else df_f
     for _, r in items.sort_values(by="ID", ascending=False).iterrows():
-        # AQUÍ TAMBIÉN USAMOS st.markdown CON unsafe_allow_html=True
         st.markdown(card_html(r), unsafe_allow_html=True)
         pdf_h = crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas'])
         st.download_button("📩 Descargar PDF", data=pdf_h, file_name=f"VYE_{r['Cliente']}.pdf", key=f"f_{r['ID']}")
@@ -225,7 +215,6 @@ elif st.session_state.seccion == "ESTADISTICAS":
     c1.metric("Ingresos", f"{total_v:.2f} €")
     c2.metric("Beneficio Neto", f"{beneficio:.2f} €")
     c3.metric("Trabajos", len(df_f))
-    
     st.divider(); st.markdown("**Ventas por Mes**")
     df_f['F_DT'] = pd.to_datetime(df_f['Fecha'], format="%d/%m/%Y", errors='coerce')
     vm = df_f.dropna(subset=['F_DT']).set_index('F_DT').resample('ME')['Precio'].sum()
