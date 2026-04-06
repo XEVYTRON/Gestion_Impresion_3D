@@ -6,7 +6,7 @@ from fpdf import FPDF
 from PIL import Image
 from io import BytesIO
 
-# --- 1. SEGURIDAD ---
+# --- 1. SEGURIDAD (SECRETS + URL) ---
 try:
     PASSWORD_APP = st.secrets["password"]
 except:
@@ -120,7 +120,7 @@ def card_html(fecha, id_job, cliente, pieza, nota, precio, badge=""):
     html_badge = f'<div class="badge-estado">{badge}</div>' if badge else ""
     return f'<div class="card-container">{html_badge}<p class="card-fecha">{fecha} | ID: {id_job}</p><p class="card-nombre">{cliente}</p><p class="card-pieza">Pieza: {pieza}</p>{html_nota}<p class="card-precio">Precio: {precio:.2f} €</p></div>'
 
-# TÍTULO CORPORATIVO VYE 3D
+# --- CABECERA CORPORATIVA ---
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900; margin-top: -30px; margin-bottom: 20px;'>VYE 3D</h1>", unsafe_allow_html=True)
 
 # --- 7. NAVEGACIÓN ---
@@ -164,7 +164,6 @@ if st.session_state.seccion == "TRABAJOS":
                     ec = st.text_input("Cliente", value=r['Cliente'])
                     ep = st.text_input("Pieza", value=r['Pieza'])
                     
-                    # --- NOVEDAD: EDITAR GRAMOS Y HORAS ---
                     c_edit_1, c_edit_2 = st.columns(2)
                     egr = c_edit_1.number_input("Gramos", value=float(r['Gramos']), min_value=0.0)
                     ehr = c_edit_2.number_input("Horas", value=float(r['Horas']), min_value=0.0)
@@ -173,17 +172,14 @@ if st.session_state.seccion == "TRABAJOS":
                     en = st.text_area("Notas", value=n_limpia)
                     
                     if st.form_submit_button("Guardar Cambios"):
-                        # Actualizamos Pedidos y Facturas con todos los datos, incluyendo los nuevos Gramos y Horas
                         columnas_upd = ['Cliente', 'Pieza', 'Precio', 'Notas', 'Gramos', 'Horas']
                         valores_upd = [ec, ep, epr, str(en).strip(), egr, ehr]
-                        
                         df_p.loc[df_p['ID'].astype(str) == id_job, columnas_upd] = valores_upd
                         df_f.loc[df_f['ID'].astype(str) == id_job, columnas_upd] = valores_upd
-                        
                         conn.update(worksheet="Pedidos", data=df_p)
                         conn.update(worksheet="Facturas", data=df_f)
                         st.session_state.df_pedidos, st.session_state.df_facturas = df_p, df_f
-                        st.success("¡Datos actualizados!"); st.rerun()
+                        st.rerun()
 
                 ck = f"dk_{id_job}"
                 if ck not in st.session_state: st.session_state[ck] = False
@@ -213,6 +209,7 @@ elif st.session_state.seccion == "NUEVO TRABAJO":
         gms = cg.number_input("Gramos", min_value=0.0, key=f"ig_{st.session_state.form_reset_key}")
         hrs = ch.number_input("Horas", min_value=0.0, key=f"ih_{st.session_state.form_reset_key}")
         mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200, 300], value=100, key=f"im_{st.session_state.form_reset_key}")
+        # PRECIO COBRADO AL CLIENTE (1€ POR HORA)
         pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + mgn / 100)
         st.markdown(f"### TOTAL ESTIMADO: {pf:.2f} €")
         nn = st.text_area("Notas", key=f"in_{st.session_state.form_reset_key}")
@@ -251,7 +248,7 @@ elif st.session_state.seccion == "FACTURAS":
 
 # --- 11. ESTADÍSTICAS ---
 elif st.session_state.seccion == "ESTADISTICAS":
-    st.markdown('<p class="titulo-seccion">Dashboard de Negocio</p>', unsafe_allow_html=True)
+    st.markdown('<p class="titulo-seccion">Dashboard Ejecutivo VYE 3D</p>', unsafe_allow_html=True)
     if not df_f.empty:
         df_s = df_f.copy()
         df_s['Precio'] = pd.to_numeric(df_s['Precio'], errors='coerce').fillna(0.0)
@@ -263,30 +260,31 @@ elif st.session_state.seccion == "ESTADISTICAS":
         total_g = df_s['Gramos'].sum()
         total_h = df_s['Horas'].sum()
         
-        # Cálculos de beneficio neto est.
+        # COSTES REALES (LUZ FACTURA + MANTENIMIENTO)
         coste_m = total_g * 0.024
-        coste_l = total_h * 0.15
-        beneficio_n = total_v - (coste_m + coste_l)
+        coste_operativo_h = 0.20 # Luz (~0.04€) + Margen repuestos/desgaste (~0.16€)
+        coste_maquina = total_h * coste_operativo_h
+        beneficio_n = total_v - (coste_m + coste_maquina)
 
-        st.markdown("### 💰 Finanzas")
+        st.markdown("### 💰 Finanzas Reales")
         m1, m2, m3 = st.columns(3)
         m1.metric("Ingresos Totales", f"{total_v:.2f} €")
-        m2.metric("Beneficio Est.", f"{beneficio_n:.2f} €")
+        m2.metric("Beneficio Neto Est.", f"{beneficio_n:.2f} €", delta=f"{((beneficio_n/total_v)*100) if total_v > 0 else 0:.1f}% Margen")
         m3.metric("Ticket Medio", f"{(total_v/len(df_s)):.2f} €")
 
-        st.markdown("### ⚙️ Producción")
+        st.markdown("### ⚙️ Rendimiento Taller")
         m4, m5, m6 = st.columns(3)
-        m4.metric("Filamento", f"{total_g/1000:.2f} kg")
-        m5.metric("Tiempo Máquina", f"{total_h:.1f} h")
+        m4.metric("Filamento Gastado", f"{total_g/1000:.2f} kg")
+        m5.metric("Tiempo de Vuelo", f"{total_h:.1f} h")
         m6.metric("Trabajos", len(df_s))
 
-        st.divider(); st.markdown("**Ventas por mes**")
+        st.divider(); st.markdown("**Evolución Mensual**")
         df_chart = df_s.dropna(subset=['Fecha_DT']).set_index('Fecha_DT')
         if not df_chart.empty:
             try: vm = df_chart.resample('ME')['Precio'].sum()
             except: vm = df_chart.resample('M')['Precio'].sum()
             st.bar_chart(vm)
-        st.divider(); st.markdown("**Ranking de clientes**")
+        st.divider(); st.markdown("**Ranking de Clientes (Top 5)**")
         ranking = df_s.groupby('Cliente').agg(Total=('Precio', 'sum'), Trabajos=('Precio', 'count')).sort_values('Total', ascending=False).head(5).reset_index()
-        for _, r in ranking.iterrows():
-            st.markdown(f'<div class="stat-card"><p class="stat-cliente">👤 {r["Cliente"]}</p><p class="stat-detalle">{int(r["Trabajos"])} trabajo(s)</p><p class="stat-total">Total: {r["Total"]:.2f} €</p></div>', unsafe_allow_html=True)
+        for i, r in ranking.iterrows():
+            st.markdown(f'<div class="stat-card"><p class="stat-cliente">#{i+1} 👤 {r["Cliente"]}</p><p class="stat-detalle">{int(r["Trabajos"])} trabajos</p><p class="stat-total">Total: {r["Total"]:.2f} €</p></div>', unsafe_allow_html=True)
