@@ -13,7 +13,7 @@ try:
 except:
     PASSWORD_APP = "xevy2024"
 
-# --- 2. MOTOR DE PDF (DISEÑO ROBUSTO, BOLD Y HOJA ÚNICA) ---
+# --- 2. MOTOR DE PDF (DISEÑO ROBUSTO Y HOJA ÚNICA) ---
 def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, horas=0):
     pdf = FPDF()
     pdf.add_page()
@@ -50,7 +50,7 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
 # --- 3. CONFIGURACIÓN ---
 st.set_page_config(page_title="VYE 3D", layout="centered")
 
-# --- 4. ESTILOS CSS (DISEÑO ORIGINAL + PRIORIDADES) ---
+# --- 4. ESTILOS CSS ---
 st.markdown("""<style>
 @keyframes blinker { 50% { border-color: #ff0000; box-shadow: 0 0 10px #ff0000; } }
 .card-urgente { border-left: 10px solid #ff0000 !important; animation: blinker 1.5s linear infinite; }
@@ -79,6 +79,8 @@ def limpiar_df(df, con_estado=False):
     df = df[cols_base].copy()
     df['Prioridad'] = df['Prioridad'].fillna('Media').replace('', 'Media').astype(str)
     df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False)
+    # Limpiamos el texto "nan" de las entregas
+    df['Entrega'] = df['Entrega'].astype(str).replace(['nan', 'NaN', 'None', ''], '')
     for n in ['Precio', 'Gramos', 'Horas']: df[n] = pd.to_numeric(df[n], errors='coerce').fillna(0.0)
     return df
 
@@ -95,16 +97,24 @@ PRIORIDADES = ["Baja", "Media", "Alta", "URGENTE"]
 
 def card_html(r, badge=""):
     prio = str(r['Prioridad']).lower()
-    ent = f"<p class='card-entrega'>⏱️ ENTREGA: {r['Entrega']}</p>" if r['Entrega'] else ""
-    nt = f"<p class='card-nota'>Notas: {r['Notas']}</p>" if r['Notas'] else ""
+    # Evitamos mostrar "NAN" en la entrega
+    e_str = str(r['Entrega']).strip()
+    ent = f"<p class='card-entrega'>⏱️ ENTREGA: {e_str}</p>" if e_str and e_str.lower() != 'nan' else ""
+    nt = f"<p class='card-nota'>Notas: {r['Notas']}</p>" if r['Notas'] and str(r['Notas']).lower() != 'nan' else ""
     bdg = f"<div class='badge-estado'>{badge}</div>" if badge else ""
     return f'<div class="card-container card-{prio}">{bdg}{ent}<p class="card-fecha">{r["Fecha"]} | ID: {r["ID"]}</p><p class="card-nombre">{r["Cliente"]}</p><p class="card-pieza">Pieza: {r["Pieza"]}</p>{nt}<p class="card-precio">{r["Precio"]:.2f} €</p></div>'
 
-# --- 6. ACCESO ---
+# --- 6. ACCESO (RESTAURADO BOTÓN ENTRAR) ---
 if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
     st.markdown("<h1 style='text-align: center;'>🔐 Acceso VYE 3D</h1>", unsafe_allow_html=True)
-    if st.text_input("Contraseña", type="password") == PASSWORD_APP: st.session_state.auth = True; st.rerun()
+    pass_input = st.text_input("Contraseña", type="password")
+    if st.button("ENTRAR"):
+        if pass_input == PASSWORD_APP:
+            st.session_state.auth = True
+            st.rerun()
+        else:
+            st.error("Contraseña incorrecta")
     st.stop()
 
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900;'>VYE 3D</h1>", unsafe_allow_html=True)
@@ -140,7 +150,14 @@ if st.session_state.sec == "TRABAJOS":
                 eg, eh, epr = c3.number_input("Gramos", value=float(r['Gramos'])), c4.number_input("Horas", value=float(r['Horas'])), c5.number_input("Precio (€)", value=float(r['Precio']))
                 c6, c7, c8 = st.columns(3)
                 eprio = c6.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(r['Prioridad']))
-                ent_val = datetime.strptime(r['Entrega'], "%d/%m/%Y") if r['Entrega'] else datetime.now()
+                
+                # REPARACIÓN DE FECHA: Evita el TypeError
+                e_str = str(r['Entrega']).strip()
+                try:
+                    ent_val = datetime.strptime(e_str, "%d/%m/%Y")
+                except:
+                    ent_val = datetime.now() # Fallback si no hay fecha válida
+                
                 eent = c7.date_input("Entrega", value=ent_val)
                 etel = c8.text_input("Tel.", r['Telefono'])
                 en = st.text_area("Notas", r['Notas'])
@@ -161,7 +178,10 @@ elif st.session_state.sec == "NUEVO":
         np = st.text_input("Pieza")
         c3, c4, c5 = st.columns(3)
         gms, hrs, prio = c3.number_input("Gramos", 0.0), c4.number_input("Horas", 0.0), c5.selectbox("Prioridad", PRIORIDADES, index=1)
-        ent = st.date_input("Entrega", value=datetime.now() + timedelta(days=2))
+        
+        # EL USUARIO ELIGE LA FECHA LIBREMENTE
+        ent = st.date_input("Fecha de Entrega", value=datetime.now()) 
+        
         mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200], value=100)
         pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + mgn / 100)
         st.write(f"### TOTAL: {pf:.2f} €")
