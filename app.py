@@ -50,7 +50,7 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
 # --- 3. CONFIGURACIÓN ---
 st.set_page_config(page_title="VYE 3D", layout="centered")
 
-# --- 4. ESTILOS CSS ---
+# --- 4. ESTILOS CSS (DISEÑO ORIGINAL RESTAURADO) ---
 st.markdown("""<style>
 @keyframes blinker { 50% { border-color: #ff0000; box-shadow: 0 0 10px #ff0000; } }
 .card-urgente-alerta { border-left: 10px solid #ff0000 !important; animation: blinker 1.5s linear infinite; }
@@ -58,10 +58,13 @@ st.markdown("""<style>
 .card-media { border-left: 10px solid #6f42c1 !important; }
 .card-baja { border-left: 10px solid #20c997 !important; }
 .card-container { background-color: #ffffff !important; border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 10px; color: #333; }
+.card-fecha { font-size: 10px; color: #777 !important; margin-bottom: 2px; text-transform: uppercase; }
 .card-nombre { font-size: 18px; font-weight: 800; color: #6f42c1 !important; margin: 0; text-transform: uppercase; }
+.card-pieza { font-size: 15px; color: #333 !important; font-weight: 600; margin-top: 4px; }
+.card-nota { font-size: 13px; color: #555 !important; font-style: italic; margin-top: 2px; line-height: 1.2; }
+.card-precio { font-size: 17px; color: #111 !important; font-weight: 900; margin-top: 8px; border-top: 1px solid #eee; padding-top: 5px; }
 .badge-estado { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; background-color: #f1f3f5; color: #6f42c1; border: 1px solid #6f42c1; margin-bottom: 5px; }
 .stat-card { background-color: #f8f9fa; border-radius: 10px; padding: 12px 16px; border-left: 5px solid #6f42c1; margin-bottom: 8px; }
-.stat-total { font-size: 16px; font-weight: 900; color: #6f42c1; margin-top: 4px; }
 </style>""", unsafe_allow_html=True)
 
 # --- 5. DATOS ---
@@ -73,7 +76,7 @@ def limpiar_df(df, con_estado=False):
     for c in cols_base:
         if c not in df.columns: df[c] = ""
     df = df[cols_base].copy()
-    df['Prioridad'] = df['Prioridad'].fillna('Media').replace(['', 'nan', 'NaN'], 'Media').astype(str)
+    df['Prioridad'] = df['Prioridad'].fillna('Media').replace(['', 'nan'], 'Media').astype(str)
     df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False)
     df['Entrega'] = df['Entrega'].astype(str).replace(['nan', 'NaN', 'None', ''], '')
     df['Notas'] = df['Notas'].astype(str).replace(['nan', 'NaN', 'None'], '')
@@ -100,13 +103,21 @@ def card_html(r, badge=""):
             if dias <= 7 or r['Prioridad'] == "URGENTE": prio_class = "card-urgente-alerta"
         except: pass
     ent = f"<p style='color:#d63384; font-size:11px; font-weight:700;'>⏱️ ENTREGA: {e_str}</p>" if e_str else ""
-    nt = f"<p style='font-style:italic; font-size:13px;'>Notas: {r['Notas']}</p>" if r['Notas'] else ""
-    return f'<div class="card-container {prio_class}"><div class="badge-estado">{badge}</div>{ent}<p style="font-size:10px; color:#777;">{r["Fecha"]} | ID: {r["ID"]}</p><p class="card-nombre">{r["Cliente"]}</p><p style="font-weight:600;">Pieza: {r["Pieza"]}</p>{nt}<p style="font-weight:900; font-size:17px; border-top:1px solid #eee; margin-top:8px;">{r["Precio"]:.2f} €</p></div>'
+    nt = f"<p class='card-nota'>Notas: {r['Notas']}</p>" if r['Notas'] else ""
+    bdg = f"<div class='badge-estado'>{badge}</div>" if badge else ""
+    return f'<div class="card-container {prio_class}">{bdg}{ent}<p class="card-fecha">{r["Fecha"]} | ID: {r["ID"]}</p><p class="card-nombre">{r["Cliente"]}</p><p class="card-pieza">Pieza: {r["Pieza"]}</p>{nt}<p class="card-precio">{r["Precio"]:.2f} €</p></div>'
 
-# --- 6. ACCESO ---
+# --- 6. ACCESO (BOTÓN ENTRAR RESTAURADO) ---
 if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
-    if st.text_input("🔑 Contraseña", type="password") == PASSWORD_APP: st.session_state.auth = True; st.rerun()
+    st.markdown("<h1 style='text-align: center;'>🔐 Acceso VYE 3D</h1>", unsafe_allow_html=True)
+    pass_input = st.text_input("Contraseña", type="password")
+    if st.button("ENTRAR"):
+        if pass_input == PASSWORD_APP:
+            st.session_state.auth = True
+            st.rerun()
+        else:
+            st.error("Contraseña incorrecta")
     st.stop()
 
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900;'>VYE 3D</h1>", unsafe_allow_html=True)
@@ -132,6 +143,9 @@ if st.session_state.sec == "TRABAJOS":
         if upd != r['Estado']:
             df_p.at[idx, "Estado"] = upd
             conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
+        if r['Telefono'] and str(r['Telefono']) != "":
+            url = f"https://wa.me/{r['Telefono']}?text=" + urllib.parse.quote(f"Hola {r['Cliente']}, tu pedido {r['Pieza']} de VYE 3D ya esta listo!")
+            st.link_button("🟢 AVISAR POR WHATSAPP", url)
         with st.expander("EDITAR / PDF"):
             with st.form(f"fm_{r['ID']}"):
                 ec, ep = st.text_input("Cliente", r['Cliente']), st.text_input("Pieza", r['Pieza'])
@@ -140,7 +154,7 @@ if st.session_state.sec == "TRABAJOS":
                 usar_f = st.checkbox("Tiene entrega", value=(r['Entrega'] != ""))
                 eent = st.date_input("Fecha", value=datetime.now()) if usar_f else None
                 etel, en = st.text_input("Tel", r['Telefono']), st.text_area("Notas", r['Notas'])
-                if st.form_submit_button("Guardar"):
+                if st.form_submit_button("Guardar Cambios"):
                     f_val = eent.strftime("%d/%m/%Y") if usar_f else ""
                     df_p.loc[df_p['ID'] == r['ID'], ['Cliente','Pieza','Precio','Notas','Gramos','Horas','Prioridad','Entrega','Telefono']] = [ec, ep, epr, en, eg, eh, eprio, f_val, etel]
                     conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
@@ -150,52 +164,58 @@ if st.session_state.sec == "TRABAJOS":
 
 # --- 9. VISTA: NUEVO ---
 elif st.session_state.sec == "NUEVO":
-    with st.form("n_f", clear_on_submit=True):
-        nc, ntel, np = st.text_input("Cliente"), st.text_input("WhatsApp"), st.text_input("Pieza")
-        gms, hrs, prio = st.number_input("Gramos", 0.0), st.number_input("Horas", 0.0), st.selectbox("Prioridad", PRIORIDADES, index=1)
-        usar_f = st.checkbox("Poner fecha de entrega")
-        ent = st.date_input("Entrega") if usar_f else None
-        pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + (st.select_slider("Margen %", options=[0,50,100,150,200], value=100)/100))
-        st.write(f"### TOTAL: {pf:.2f} €"); nn = st.text_area("Notas")
-        if st.form_submit_button("GUARDAR"):
-            f_e = ent.strftime("%d/%m/%Y") if usar_f else ""
-            nueva = pd.DataFrame([{"ID": datetime.now().strftime("%y%m%d%H%M%S"), "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": nc, "Pieza": np, "Estado": "Pendiente", "Precio": pf, "Gramos": gms, "Horas": hrs, "Notas": nn, "Prioridad": prio, "Entrega": f_e, "Telefono": ntel}])
-            df_p = pd.concat([df_p, nueva], ignore_index=True); conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
+    with st.container(key=f"cont_{st.session_state.reset_key}"):
+        with st.form("n_f", clear_on_submit=True):
+            nc, ntel, np = st.text_input("Cliente"), st.text_input("WhatsApp (34...)"), st.text_input("Pieza")
+            gms, hrs, prio = st.number_input("Gramos", 0.0), st.number_input("Horas", 0.0), st.selectbox("Prioridad", PRIORIDADES, index=1)
+            usar_f = st.checkbox("Poner fecha de entrega")
+            ent = st.date_input("Entrega") if usar_f else None
+            pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + (st.select_slider("Margen %", options=[0,50,100,150,200], value=100)/100))
+            st.write(f"### TOTAL: {pf:.2f} €"); nn = st.text_area("Notas")
+            if st.form_submit_button("GUARDAR TRABAJO"):
+                f_e = ent.strftime("%d/%m/%Y") if usar_f else ""
+                nueva = pd.DataFrame([{"ID": datetime.now().strftime("%y%m%d%H%M%S"), "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": nc, "Pieza": np, "Estado": "Pendiente", "Precio": pf, "Gramos": gms, "Horas": hrs, "Notas": nn, "Prioridad": prio, "Entrega": f_e, "Telefono": ntel}])
+                df_p = pd.concat([df_p, nueva], ignore_index=True); conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.session_state.reset_key +=1; st.rerun()
 
-# --- 10. DASHBOARD TRIPLE VISTA ---
+# --- 10. DASHBOARD EJECUTIVO CON HISTORIAL ---
 elif st.session_state.sec == "STATS":
-    # 💰 1. TRABAJOS FINALIZADOS (CUENTAS REALES)
-    st.markdown("## 💰 Caja Real (Finalizados)")
-    df_f = df_p[df_p["Estado"] == "Finalizado"]
-    if not df_f.empty:
-        t_v = df_f['Precio'].sum(); t_g = df_f['Gramos'].sum(); t_h = df_f['Horas'].sum()
-        beneficio = t_v - (t_g * 0.024 + t_h * 0.20)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Ingresos Cobrados", f"{t_v:.2f} €")
-        c2.metric("Beneficio Neto", f"{beneficio:.2f} €", delta=f"{((beneficio/t_v)*100):.1f}%")
-        c3.metric("Material Usado", f"{t_g/1000:.2f} kg")
-    else: st.info("No hay trabajos finalizados.")
-
-    # ⏳ 2. TRABAJOS POR REALIZAR (ESTIMACIONES)
-    st.markdown("## ⏳ Proyección (Pendientes)")
+    st.markdown("## 📊 Centro de Control VYE 3D")
+    df_p['F_DT'] = pd.to_datetime(df_p['Fecha'], format="%d/%m/%Y", errors='coerce')
+    
+    # 1. TRABAJOS POR REALIZAR (TODO LO QUE NO ES FINALIZADO)
+    st.markdown("### ⏳ Pendientes y Proyecciones")
     df_pend = df_p[df_p["Estado"] != "Finalizado"]
     if not df_pend.empty:
-        p_v = df_pend['Precio'].sum(); p_g = df_pend['Gramos'].sum(); p_h = df_pend['Horas'].sum()
-        c4, c5, c6 = st.columns(3)
-        c4.metric("Ventas en Cola", f"{p_v:.2f} €")
-        c5.metric("Plástico Necesario", f"{p_g/1000:.2f} kg")
-        c6.metric("Horas de Luz", f"{p_h:.1f} h")
+        p_v, p_g, p_h = df_pend['Precio'].sum(), df_pend['Gramos'].sum(), df_pend['Horas'].sum()
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Ventas en Espera", f"{p_v:.2f} €")
+        c2.metric("Plástico Necesario", f"{p_g/1000:.2f} kg")
+        c3.metric("Horas de Luz", f"{p_h:.1f} h")
     else: st.info("No hay trabajos pendientes.")
 
-    # 📅 3. MES EN CURSO
-    st.markdown("## 📅 Mes en Curso")
-    df_p['F_DT'] = pd.to_datetime(df_p['Fecha'], format="%d/%m/%Y", errors='coerce')
-    hoy = datetime.now()
-    df_mes = df_p[(df_p['F_DT'].dt.month == hoy.month) & (df_p['F_DT'].dt.year == hoy.year)]
-    if not df_mes.empty:
-        m_v = df_mes['Precio'].sum(); m_f = len(df_mes[df_mes["Estado"] == "Finalizado"])
-        c7, c8 = st.columns(2)
-        c7.metric("Ventas de Abril", f"{m_v:.2f} €")
-        c8.metric("Entregas Realizadas", f"{m_f} piezas")
-        st.bar_chart(df_mes.groupby('F_DT')['Precio'].sum())
-    else: st.info("Sin actividad registrada este mes.")
+    st.divider()
+
+    # 2. HISTORIAL DE FACTURACIÓN REAL (SOLO FINALIZADOS)
+    st.markdown("### 📜 Historial de Caja Real")
+    df_f = df_p[df_p["Estado"] == "Finalizado"].copy()
+    
+    if not df_f.empty:
+        # Selector de Mes/Año para el historial
+        df_f['Mes_Año'] = df_f['F_DT'].dt.strftime('%m/%Y')
+        meses_disponibles = sorted(df_f['Mes_Año'].unique(), reverse=True)
+        mes_sel = st.selectbox("Selecciona mes para ver datos reales:", meses_disponibles)
+        
+        df_mes_real = df_f[df_f['Mes_Año'] == mes_sel]
+        
+        t_v = df_mes_real['Precio'].sum(); t_g = df_mes_real['Gramos'].sum(); t_h = df_mes_real['Horas'].sum()
+        beneficio = t_v - (t_g * 0.024 + t_h * 0.20)
+        
+        col_a, col_b, col_c = st.columns(3)
+        col_a.metric(f"Ingresos {mes_sel}", f"{t_v:.2f} €")
+        col_b.metric("Beneficio Neto", f"{beneficio:.2f} €")
+        col_c.metric("Material Gastado", f"{t_g/1000:.2f} kg")
+        
+        st.markdown(f"**Detalle de entregas en {mes_sel}:**")
+        st.dataframe(df_mes_real[['Fecha', 'Cliente', 'Pieza', 'Precio']], use_container_width=True)
+    else:
+        st.info("Aún no hay historial de trabajos finalizados.")
