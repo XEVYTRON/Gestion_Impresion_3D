@@ -58,16 +58,9 @@ st.markdown("""<style>
 .card-media { border-left: 10px solid #6f42c1 !important; }
 .card-baja { border-left: 10px solid #20c997 !important; }
 .card-container { background-color: #ffffff !important; border-radius: 10px; padding: 15px; border: 1px solid #e0e0e0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 10px; color: #333; }
-.card-fecha { font-size: 10px; color: #777 !important; margin-bottom: 2px; text-transform: uppercase; }
 .card-nombre { font-size: 18px; font-weight: 800; color: #6f42c1 !important; margin: 0; text-transform: uppercase; }
-.card-pieza { font-size: 15px; color: #333 !important; font-weight: 600; margin-top: 4px; }
-.card-nota { font-size: 13px; color: #555 !important; font-style: italic; margin-top: 2px; line-height: 1.2; }
-.card-precio { font-size: 17px; color: #111 !important; font-weight: 900; margin-top: 8px; border-top: 1px solid #eee; padding-top: 5px; }
-.card-entrega { font-size: 11px; font-weight: 700; color: #d63384; margin-bottom: 5px; text-transform: uppercase; }
 .badge-estado { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; background-color: #f1f3f5; color: #6f42c1; border: 1px solid #6f42c1; margin-bottom: 5px; }
 .stat-card { background-color: #f8f9fa; border-radius: 10px; padding: 12px 16px; border-left: 5px solid #6f42c1; margin-bottom: 8px; }
-.stat-cliente { font-size: 15px; font-weight: 700; color: #343a40; }
-.stat-detalle { font-size: 13px; color: #666; margin-top: 2px; }
 .stat-total { font-size: 16px; font-weight: 900; color: #6f42c1; margin-top: 4px; }
 </style>""", unsafe_allow_html=True)
 
@@ -82,7 +75,6 @@ def limpiar_df(df, con_estado=False):
     df = df[cols_base].copy()
     df['Prioridad'] = df['Prioridad'].fillna('Media').replace(['', 'nan', 'NaN'], 'Media').astype(str)
     df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False)
-    # Limpiamos para que no salga NAN
     df['Entrega'] = df['Entrega'].astype(str).replace(['nan', 'NaN', 'None', ''], '')
     df['Notas'] = df['Notas'].astype(str).replace(['nan', 'NaN', 'None'], '')
     for n in ['Precio', 'Gramos', 'Horas']: df[n] = pd.to_numeric(df[n], errors='coerce').fillna(0.0)
@@ -90,10 +82,8 @@ def limpiar_df(df, con_estado=False):
 
 @st.cache_data(ttl=1)
 def cargar_todo():
-    try:
-        p = conn.read(worksheet="Pedidos", ttl=0); f = conn.read(worksheet="Facturas", ttl=0)
-        return limpiar_df(p, True), limpiar_df(f, False)
-    except: return None, None
+    p = conn.read(worksheet="Pedidos", ttl=0); f = conn.read(worksheet="Facturas", ttl=0)
+    return limpiar_df(p, True), limpiar_df(f, False)
 
 if 'df_p' not in st.session_state: st.session_state.df_p, st.session_state.df_f = cargar_todo()
 if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
@@ -102,30 +92,21 @@ ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado
 PRIORIDADES = ["Baja", "Media", "Alta", "URGENTE"]
 
 def card_html(r, badge=""):
-    # Lógica de color por fecha (7 días) o prioridad URGENTE
     prio_class = f"card-{r['Prioridad'].lower()}"
     e_str = str(r['Entrega']).strip()
-    
-    if e_str and e_str.lower() != 'nan' and e_str != "":
+    if e_str and e_str != "":
         try:
-            fecha_ent = datetime.strptime(e_str, "%d/%m/%Y")
-            dias_restantes = (fecha_ent - datetime.now()).days
-            if dias_restantes <= 7 or r['Prioridad'] == "URGENTE":
-                prio_class = "card-urgente-alerta"
+            dias = (datetime.strptime(e_str, "%d/%m/%Y") - datetime.now()).days
+            if dias <= 7 or r['Prioridad'] == "URGENTE": prio_class = "card-urgente-alerta"
         except: pass
-
-    ent = f"<p class='card-entrega'>⏱️ ENTREGA: {e_str}</p>" if e_str and e_str.lower() != 'nan' and e_str != "" else ""
-    nt = f"<p class='card-nota'>Notas: {r['Notas']}</p>" if r['Notas'] and str(r['Notas']).strip() != "" else ""
-    bdg = f"<div class='badge-estado'>{badge}</div>" if badge else ""
-    return f'<div class="card-container {prio_class}">{bdg}{ent}<p class="card-fecha">{r["Fecha"]} | ID: {r["ID"]}</p><p class="card-nombre">{r["Cliente"]}</p><p class="card-pieza">Pieza: {r["Pieza"]}</p>{nt}<p class="card-precio">{r["Precio"]:.2f} €</p></div>'
+    ent = f"<p style='color:#d63384; font-size:11px; font-weight:700;'>⏱️ ENTREGA: {e_str}</p>" if e_str else ""
+    nt = f"<p style='font-style:italic; font-size:13px;'>Notas: {r['Notas']}</p>" if r['Notas'] else ""
+    return f'<div class="card-container {prio_class}"><div class="badge-estado">{badge}</div>{ent}<p style="font-size:10px; color:#777;">{r["Fecha"]} | ID: {r["ID"]}</p><p class="card-nombre">{r["Cliente"]}</p><p style="font-weight:600;">Pieza: {r["Pieza"]}</p>{nt}<p style="font-weight:900; font-size:17px; border-top:1px solid #eee; margin-top:8px;">{r["Precio"]:.2f} €</p></div>'
 
 # --- 6. ACCESO ---
 if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
-    st.markdown("<h1 style='text-align: center;'>🔐 Acceso VYE 3D</h1>", unsafe_allow_html=True)
-    pass_input = st.text_input("Contraseña", type="password")
-    if st.button("ENTRAR"):
-        if pass_input == PASSWORD_APP: st.session_state.auth = True; st.rerun()
+    if st.text_input("🔑 Contraseña", type="password") == PASSWORD_APP: st.session_state.auth = True; st.rerun()
     st.stop()
 
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900;'>VYE 3D</h1>", unsafe_allow_html=True)
@@ -139,110 +120,82 @@ if n_cols[2].button("FACTURAS"): st.session_state.sec = "FACTURAS"; st.rerun()
 if n_cols[3].button("📊"): st.session_state.sec = "STATS"; st.rerun()
 st.divider()
 
-df_p, df_f = st.session_state.df_p, st.session_state.df_f
+df_p = st.session_state.df_p
 
 # --- 8. VISTA: TRABAJOS ---
 if st.session_state.sec == "TRABAJOS":
-    busc = st.text_input("🔍 Buscar Cliente o Pieza...").lower().strip()
+    busc = st.text_input("🔍 Buscar...").lower().strip()
     items = df_p[df_p['Cliente'].str.lower().str.contains(busc) | df_p['Pieza'].str.lower().str.contains(busc)] if busc else df_p[df_p["Estado"] == st.selectbox("Estado:", ESTADOS)]
-    
-    items = items.copy()
-    items['pv'] = items['Prioridad'].map({"Baja":1, "Media":2, "Alta":3, "URGENTE":4}).fillna(2)
-    for idx, r in items.sort_values(by="pv", ascending=False).iterrows():
-        st.markdown(card_html(r, r['Estado'] if busc else ""), unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        upd = c1.selectbox("Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"e_{r['ID']}")
+    for idx, r in items.iterrows():
+        st.markdown(card_html(r, r['Estado']), unsafe_allow_html=True)
+        upd = st.selectbox("Cambiar Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"up_{r['ID']}")
         if upd != r['Estado']:
             df_p.at[idx, "Estado"] = upd
             conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
-        if r['Telefono'] and str(r['Telefono']) != "":
-            url = f"https://wa.me/{r['Telefono']}?text=" + urllib.parse.quote(f"Hola {r['Cliente']}, tu pedido {r['Pieza']} de VYE 3D ya esta listo!")
-            c2.link_button("🟢 WHATSAPP", url)
-        
-        with st.expander("MODIFICAR / PDF ⚙️"):
-            with st.form(f"f_{r['ID']}"):
-                ec, ep = st.text_input("Cliente", str(r['Cliente'])), st.text_input("Pieza", str(r['Pieza']))
-                c3, c4, c5 = st.columns(3)
-                eg, eh, epr = c3.number_input("Gramos", value=float(r['Gramos'])), c4.number_input("Horas", value=float(r['Horas'])), c5.number_input("Precio (€)", value=float(r['Precio']))
-                c6, c7, c8 = st.columns(3)
-                eprio = c6.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(r['Prioridad']))
-                
-                # Gestión de fecha opcional al editar
-                e_str = str(r['Entrega']).strip()
-                tiene_fecha = st.checkbox("Tiene fecha de entrega", value=(e_str != ""))
-                try: ent_val = datetime.strptime(e_str, "%d/%m/%Y")
-                except: ent_val = datetime.now()
-                eent = st.date_input("Nueva Entrega", value=ent_val) if tiene_fecha else None
-                
-                etel, en = c8.text_input("Tel.", str(r['Telefono'])), st.text_area("Notas", str(r['Notas']))
+        with st.expander("EDITAR / PDF"):
+            with st.form(f"fm_{r['ID']}"):
+                ec, ep = st.text_input("Cliente", r['Cliente']), st.text_input("Pieza", r['Pieza'])
+                eg, eh, epr = st.number_input("Gramos", value=float(r['Gramos'])), st.number_input("Horas", value=float(r['Horas'])), st.number_input("Precio (€)", value=float(r['Precio']))
+                eprio = st.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(r['Prioridad']))
+                usar_f = st.checkbox("Tiene entrega", value=(r['Entrega'] != ""))
+                eent = st.date_input("Fecha", value=datetime.now()) if usar_f else None
+                etel, en = st.text_input("Tel", r['Telefono']), st.text_area("Notas", r['Notas'])
                 if st.form_submit_button("Guardar"):
-                    f_final = eent.strftime("%d/%m/%Y") if tiene_fecha else ""
-                    cols = {'Cliente': ec, 'Pieza': ep, 'Precio': epr, 'Notas': str(en).strip(), 'Gramos': eg, 'Horas': eh, 'Prioridad': eprio, 'Entrega': f_final, 'Telefono': etel}
-                    for k,v in cols.items():
-                        df_p.at[idx, k] = v
-                        idx_f = df_f[df_f['ID'] == r['ID']].index
-                        if not idx_f.empty: df_f.at[idx_f[0], k] = v
-                    conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f)
-                    st.session_state.df_p, st.session_state.df_f = df_p, df_f; st.rerun()
-            st.download_button("📩 PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"p_{r['ID']}")
-            if st.button("🗑️ Eliminar", key=f"d_{r['ID']}"):
-                df_p = df_p[df_p['ID'] != r['ID']]; df_f = df_f[df_f['ID'] != r['ID']]
-                conn.update(worksheet="Pedidos", data=df_p); conn.update(worksheet="Facturas", data=df_f); st.session_state.df_p, st.session_state.df_f = df_p, df_f; st.rerun()
-        st.divider()
+                    f_val = eent.strftime("%d/%m/%Y") if usar_f else ""
+                    df_p.loc[df_p['ID'] == r['ID'], ['Cliente','Pieza','Precio','Notas','Gramos','Horas','Prioridad','Entrega','Telefono']] = [ec, ep, epr, en, eg, eh, eprio, f_val, etel]
+                    conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
+            st.download_button("📩 PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"pdf_{r['ID']}")
+            if st.button("🗑️ Eliminar", key=f"dl_{r['ID']}"):
+                df_p = df_p[df_p['ID'] != r['ID']]; conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
 
 # --- 9. VISTA: NUEVO ---
 elif st.session_state.sec == "NUEVO":
-    with st.container(key=f"n_{st.session_state.reset_key}"):
-        with st.form("n_f", clear_on_submit=True):
-            c1, c2 = st.columns(2)
-            nc, ntel = c1.text_input("Cliente"), c2.text_input("WhatsApp (34...)")
-            np = st.text_input("Pieza")
-            c3, c4, c5 = st.columns(3)
-            gms, hrs, prio = c3.number_input("Gramos", 0.0), c4.number_input("Horas", 0.0), c5.selectbox("Prioridad", PRIORIDADES, index=1)
-            
-            # Fecha opcional
-            usar_fecha = st.checkbox("Poner fecha de entrega")
-            ent = st.date_input("Entrega", value=datetime.now()) if usar_fecha else None
-            
-            mgn = st.select_slider("Margen %", options=[0, 50, 100, 150, 200], value=100)
-            pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + mgn / 100)
-            st.write(f"### TOTAL: {pf:.2f} €")
-            nn = st.text_area("Notas")
-            if st.form_submit_button("GUARDAR"):
-                if nc and np:
-                    f_ent = ent.strftime("%d/%m/%Y") if usar_fecha else ""
-                    id_n = datetime.now().strftime("%y%m%d%H%M%S")
-                    nueva = pd.DataFrame([{"ID": id_n, "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": nc, "Pieza": np, "Estado": "Pendiente", "Precio": pf, "Gramos": gms, "Horas": hrs, "Notas": nn, "Prioridad": prio, "Entrega": f_ent, "Telefono": ntel}])
-                    df_p_n, df_f_n = pd.concat([df_p, nueva], ignore_index=True), pd.concat([df_f, nueva.drop(columns=['Estado'])], ignore_index=True)
-                    conn.update(worksheet="Pedidos", data=df_p_n); conn.update(worksheet="Facturas", data=df_f_n)
-                    st.session_state.df_p, st.session_state.df_f, st.session_state.reset_key = df_p_n, df_f_n, st.session_state.reset_key + 1; st.rerun()
+    with st.form("n_f", clear_on_submit=True):
+        nc, ntel, np = st.text_input("Cliente"), st.text_input("WhatsApp"), st.text_input("Pieza")
+        gms, hrs, prio = st.number_input("Gramos", 0.0), st.number_input("Horas", 0.0), st.selectbox("Prioridad", PRIORIDADES, index=1)
+        usar_f = st.checkbox("Poner fecha de entrega")
+        ent = st.date_input("Entrega") if usar_f else None
+        pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + (st.select_slider("Margen %", options=[0,50,100,150,200], value=100)/100))
+        st.write(f"### TOTAL: {pf:.2f} €"); nn = st.text_area("Notas")
+        if st.form_submit_button("GUARDAR"):
+            f_e = ent.strftime("%d/%m/%Y") if usar_f else ""
+            nueva = pd.DataFrame([{"ID": datetime.now().strftime("%y%m%d%H%M%S"), "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": nc, "Pieza": np, "Estado": "Pendiente", "Precio": pf, "Gramos": gms, "Horas": hrs, "Notas": nn, "Prioridad": prio, "Entrega": f_e, "Telefono": ntel}])
+            df_p = pd.concat([df_p, nueva], ignore_index=True); conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
 
-# --- 10. STATS (SOLO FINALIZADOS) ---
+# --- 10. DASHBOARD TRIPLE VISTA ---
 elif st.session_state.sec == "STATS":
-    st.markdown("### 📊 Dashboard (Solo trabajos FINALIZADOS)")
-    # FILTRO CRÍTICO: Solo lo que ya se ha terminado de verdad
-    df_real = df_p[df_p["Estado"] == "Finalizado"].copy()
-    
-    if not df_real.empty:
-        total_v = df_real['Precio'].sum()
-        total_g, total_h = df_real['Gramos'].sum(), df_real['Horas'].sum()
-        coste_luz_mantenimiento = total_h * 0.20
-        coste_filamento = total_g * 0.024
-        beneficio = total_v - (coste_filamento + coste_luz_mantenimiento)
-        
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Ingresos Reales", f"{total_v:.2f} €")
-        m2.metric("Beneficio Neto", f"{beneficio:.2f} €", delta=f"{((beneficio/total_v)*100) if total_v > 0 else 0:.1f}%")
-        m3.metric("Trabajos Listos", len(df_real))
-        
-        st.divider(); st.markdown("**Insumos Consumidos**")
-        m4, m5 = st.columns(2)
-        m4.metric("Filamento Real", f"{total_g/1000:.2f} kg")
-        m5.metric("Horas Máquina", f"{total_h:.1f} h")
-        
-        st.divider(); st.markdown("**Ranking Top Clientes (Finalizados)**")
-        rank = df_real.groupby('Cliente').agg(T=('Precio','sum'), C=('Precio','count')).sort_values('T', ascending=False).head(5).reset_index()
-        for i, r in rank.iterrows():
-            st.markdown(f'<div class="stat-card"><p class="stat-cliente">#{i+1} {r["Cliente"]}</p><p class="stat-total">{r["T"]:.2f} € en {int(r["C"])} piezas</p></div>', unsafe_allow_html=True)
-    else:
-        st.info("Aún no hay trabajos finalizados para calcular estadísticas reales.")
+    # 💰 1. TRABAJOS FINALIZADOS (CUENTAS REALES)
+    st.markdown("## 💰 Caja Real (Finalizados)")
+    df_f = df_p[df_p["Estado"] == "Finalizado"]
+    if not df_f.empty:
+        t_v = df_f['Precio'].sum(); t_g = df_f['Gramos'].sum(); t_h = df_f['Horas'].sum()
+        beneficio = t_v - (t_g * 0.024 + t_h * 0.20)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Ingresos Cobrados", f"{t_v:.2f} €")
+        c2.metric("Beneficio Neto", f"{beneficio:.2f} €", delta=f"{((beneficio/t_v)*100):.1f}%")
+        c3.metric("Material Usado", f"{t_g/1000:.2f} kg")
+    else: st.info("No hay trabajos finalizados.")
+
+    # ⏳ 2. TRABAJOS POR REALIZAR (ESTIMACIONES)
+    st.markdown("## ⏳ Proyección (Pendientes)")
+    df_pend = df_p[df_p["Estado"] != "Finalizado"]
+    if not df_pend.empty:
+        p_v = df_pend['Precio'].sum(); p_g = df_pend['Gramos'].sum(); p_h = df_pend['Horas'].sum()
+        c4, c5, c6 = st.columns(3)
+        c4.metric("Ventas en Cola", f"{p_v:.2f} €")
+        c5.metric("Plástico Necesario", f"{p_g/1000:.2f} kg")
+        c6.metric("Horas de Luz", f"{p_h:.1f} h")
+    else: st.info("No hay trabajos pendientes.")
+
+    # 📅 3. MES EN CURSO
+    st.markdown("## 📅 Mes en Curso")
+    df_p['F_DT'] = pd.to_datetime(df_p['Fecha'], format="%d/%m/%Y", errors='coerce')
+    hoy = datetime.now()
+    df_mes = df_p[(df_p['F_DT'].dt.month == hoy.month) & (df_p['F_DT'].dt.year == hoy.year)]
+    if not df_mes.empty:
+        m_v = df_mes['Precio'].sum(); m_f = len(df_mes[df_mes["Estado"] == "Finalizado"])
+        c7, c8 = st.columns(2)
+        c7.metric("Ventas de Abril", f"{m_v:.2f} €")
+        c8.metric("Entregas Realizadas", f"{m_f} piezas")
+        st.bar_chart(df_mes.groupby('F_DT')['Precio'].sum())
+    else: st.info("Sin actividad registrada este mes.")
