@@ -50,7 +50,7 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
 # --- 3. CONFIGURACIÓN ---
 st.set_page_config(page_title="VYE 3D", layout="centered")
 
-# --- 4. ESTILOS CSS (DISEÑO ORIGINAL RESTAURADO) ---
+# --- 4. ESTILOS CSS ---
 st.markdown("""<style>
 @keyframes blinker { 50% { border-color: #ff0000; box-shadow: 0 0 10px #ff0000; } }
 .card-urgente-alerta { border-left: 10px solid #ff0000 !important; animation: blinker 1.5s linear infinite; }
@@ -76,7 +76,7 @@ def limpiar_df(df, con_estado=False):
     for c in cols_base:
         if c not in df.columns: df[c] = ""
     df = df[cols_base].copy()
-    df['Prioridad'] = df['Prioridad'].fillna('Media').replace(['', 'nan'], 'Media').astype(str)
+    df['Prioridad'] = df['Prioridad'].fillna('Media').replace(['', 'nan', 'NaN'], 'Media').astype(str)
     df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False)
     df['Entrega'] = df['Entrega'].astype(str).replace(['nan', 'NaN', 'None', ''], '')
     df['Notas'] = df['Notas'].astype(str).replace(['nan', 'NaN', 'None'], '')
@@ -85,10 +85,12 @@ def limpiar_df(df, con_estado=False):
 
 @st.cache_data(ttl=1)
 def cargar_todo():
-    p = conn.read(worksheet="Pedidos", ttl=0); f = conn.read(worksheet="Facturas", ttl=0)
-    return limpiar_df(p, True), limpiar_df(f, False)
+    try:
+        p = conn.read(worksheet="Pedidos", ttl=0)
+        return limpiar_df(p, True)
+    except: return None
 
-if 'df_p' not in st.session_state: st.session_state.df_p, st.session_state.df_f = cargar_todo()
+if 'df_p' not in st.session_state: st.session_state.df_p = cargar_todo()
 if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
 
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
@@ -107,17 +109,14 @@ def card_html(r, badge=""):
     bdg = f"<div class='badge-estado'>{badge}</div>" if badge else ""
     return f'<div class="card-container {prio_class}">{bdg}{ent}<p class="card-fecha">{r["Fecha"]} | ID: {r["ID"]}</p><p class="card-nombre">{r["Cliente"]}</p><p class="card-pieza">Pieza: {r["Pieza"]}</p>{nt}<p class="card-precio">{r["Precio"]:.2f} €</p></div>'
 
-# --- 6. ACCESO (BOTÓN ENTRAR RESTAURADO) ---
+# --- 6. ACCESO (BOTÓN ENTRAR FIX) ---
 if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
     st.markdown("<h1 style='text-align: center;'>🔐 Acceso VYE 3D</h1>", unsafe_allow_html=True)
-    pass_input = st.text_input("Contraseña", type="password")
+    p_in = st.text_input("Contraseña", type="password")
     if st.button("ENTRAR"):
-        if pass_input == PASSWORD_APP:
-            st.session_state.auth = True
-            st.rerun()
-        else:
-            st.error("Contraseña incorrecta")
+        if p_in == PASSWORD_APP: st.session_state.auth = True; st.rerun()
+        else: st.error("Contraseña incorrecta")
     st.stop()
 
 st.markdown("<h1 style='text-align: center; color: #6f42c1; text-transform: uppercase; font-size: 50px; font-weight: 900;'>VYE 3D</h1>", unsafe_allow_html=True)
@@ -136,7 +135,7 @@ df_p = st.session_state.df_p
 # --- 8. VISTA: TRABAJOS ---
 if st.session_state.sec == "TRABAJOS":
     busc = st.text_input("🔍 Buscar...").lower().strip()
-    items = df_p[df_p['Cliente'].str.lower().str.contains(busc) | df_p['Pieza'].str.lower().str.contains(busc)] if busc else df_p[df_p["Estado"] == st.selectbox("Estado:", ESTADOS)]
+    items = df_p[df_p['Cliente'].str.lower().str.contains(busc, na=False) | df_p['Pieza'].str.lower().str.contains(busc, na=False)] if busc else df_p[df_p["Estado"] == st.selectbox("Estado:", ESTADOS)]
     for idx, r in items.iterrows():
         st.markdown(card_html(r, r['Estado']), unsafe_allow_html=True)
         upd = st.selectbox("Cambiar Estado:", ESTADOS, index=ESTADOS.index(r['Estado']), key=f"up_{r['ID']}")
@@ -177,12 +176,31 @@ elif st.session_state.sec == "NUEVO":
                 nueva = pd.DataFrame([{"ID": datetime.now().strftime("%y%m%d%H%M%S"), "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": nc, "Pieza": np, "Estado": "Pendiente", "Precio": pf, "Gramos": gms, "Horas": hrs, "Notas": nn, "Prioridad": prio, "Entrega": f_e, "Telefono": ntel}])
                 df_p = pd.concat([df_p, nueva], ignore_index=True); conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.session_state.reset_key +=1; st.rerun()
 
-# --- 10. DASHBOARD EJECUTIVO CON HISTORIAL ---
+# --- 10. VISTA: FACTURAS (Historial Unificado) ---
+elif st.session_state.sec == "FACTURAS":
+    st.markdown("### 📜 Historial de Facturas")
+    busc_f = st.text_input("🔍 Buscar por Cliente o Pieza...").lower().strip()
+    
+    # Usamos df_p para mostrar todo el historial de trabajos creados
+    items_f = df_p[df_p['Cliente'].str.lower().str.contains(busc_f, na=False) | df_p['Pieza'].str.lower().str.contains(busc_f, na=False)] if busc_f else df_p
+    
+    for _, r in items_f.sort_values(by="ID", ascending=False).iterrows():
+        # Usamos el diseño de tarjeta original
+        st.markdown(card_html(r, r['Estado']), unsafe_allow_html=True)
+        # Botón de descarga de PDF para esta factura
+        st.download_button(
+            "📩 Descargar PDF", 
+            data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), 
+            file_name=f"VYE_{r['Cliente']}.pdf", 
+            key=f"fct_{r['ID']}"
+        )
+        st.divider()
+
+# --- 11. STATS ---
 elif st.session_state.sec == "STATS":
     st.markdown("## 📊 Centro de Control VYE 3D")
     df_p['F_DT'] = pd.to_datetime(df_p['Fecha'], format="%d/%m/%Y", errors='coerce')
     
-    # 1. TRABAJOS POR REALIZAR (TODO LO QUE NO ES FINALIZADO)
     st.markdown("### ⏳ Pendientes y Proyecciones")
     df_pend = df_p[df_p["Estado"] != "Finalizado"]
     if not df_pend.empty:
@@ -195,27 +213,18 @@ elif st.session_state.sec == "STATS":
 
     st.divider()
 
-    # 2. HISTORIAL DE FACTURACIÓN REAL (SOLO FINALIZADOS)
     st.markdown("### 📜 Historial de Caja Real")
-    df_f = df_p[df_p["Estado"] == "Finalizado"].copy()
-    
-    if not df_f.empty:
-        # Selector de Mes/Año para el historial
-        df_f['Mes_Año'] = df_f['F_DT'].dt.strftime('%m/%Y')
-        meses_disponibles = sorted(df_f['Mes_Año'].unique(), reverse=True)
-        mes_sel = st.selectbox("Selecciona mes para ver datos reales:", meses_disponibles)
-        
-        df_mes_real = df_f[df_f['Mes_Año'] == mes_sel]
-        
+    df_f_final = df_p[df_p["Estado"] == "Finalizado"].copy()
+    if not df_f_final.empty:
+        df_f_final['Mes_Año'] = df_f_final['F_DT'].dt.strftime('%m/%Y')
+        meses = sorted(df_f_final['Mes_Año'].unique(), reverse=True)
+        mes_sel = st.selectbox("Selecciona mes:", meses)
+        df_mes_real = df_f_final[df_f_final['Mes_Año'] == mes_sel]
         t_v = df_mes_real['Precio'].sum(); t_g = df_mes_real['Gramos'].sum(); t_h = df_mes_real['Horas'].sum()
         beneficio = t_v - (t_g * 0.024 + t_h * 0.20)
-        
         col_a, col_b, col_c = st.columns(3)
         col_a.metric(f"Ingresos {mes_sel}", f"{t_v:.2f} €")
         col_b.metric("Beneficio Neto", f"{beneficio:.2f} €")
         col_c.metric("Material Gastado", f"{t_g/1000:.2f} kg")
-        
-        st.markdown(f"**Detalle de entregas en {mes_sel}:**")
         st.dataframe(df_mes_real[['Fecha', 'Cliente', 'Pieza', 'Precio']], use_container_width=True)
-    else:
-        st.info("Aún no hay historial de trabajos finalizados.")
+    else: st.info("No hay trabajos finalizados.")
