@@ -6,6 +6,7 @@ from fpdf import FPDF
 from PIL import Image
 from io import BytesIO
 import urllib.parse
+import re
 
 # --- 1. SEGURIDAD ---
 try:
@@ -142,15 +143,17 @@ if st.session_state.sec == "TRABAJOS":
             df_p.at[idx, "Estado"] = upd
             conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
         
-        # --- SISTEMA DE AVISO WHATSAPP MEJORADO ---
+        # --- WHATSAPP BLINDADO ---
         if r['Telefono'] and str(r['Telefono']) != "":
-            # Creamos un resumen de texto para el cliente
-            resumen_msg = f"¡Hola {r['Cliente']}! 👋 Tu pedido en VYE 3D ya está listo.\n\n🛠 *Detalles:* {r['Pieza']}\n🆔 *ID:* {r['ID']}\n💰 *Total:* {r['Precio']:.2f} €\n\nPuedes pasar a recogerlo cuando quieras. ¡Te adjunto la factura!"
-            url = f"https://wa.me/{r['Telefono']}?text=" + urllib.parse.quote(resumen_msg)
+            # Limpiar número: Solo dejar dígitos (Ej: "+34 660..." -> "34660...")
+            tel_limpio = re.sub(r'\D', '', str(r['Telefono']))
+            
+            resumen_msg = f"¡Hola {r['Cliente']}! 👋 Tu pedido en VYE 3D ya está listo.\n\n🛠 *Detalles:* {r['Pieza']}\n💰 *Total:* {r['Precio']:.2f} €\n\nPuedes pasar a recogerlo cuando quieras. ¡Te adjunto la factura!"
+            url_wa = f"https://api.whatsapp.com/send?phone={tel_limpio}&text={urllib.parse.quote(resumen_msg)}"
             
             c_wa, c_pdf = st.columns(2)
-            c_wa.link_button("🟢 AVISAR POR WHATSAPP", url)
-            c_pdf.download_button("📩 DESCARGAR PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"pdf_quick_{r['ID']}")
+            c_wa.link_button("🟢 AVISAR POR WHATSAPP", url_wa)
+            c_pdf.download_button("📩 DESCARGAR PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"pdf_q_{r['ID']}")
 
         with st.expander("EDITAR / ELIMINAR ⚙️"):
             with st.form(f"fm_{r['ID']}"):
@@ -175,7 +178,8 @@ elif st.session_state.sec == "NUEVO":
             gms, hrs, prio = st.number_input("Gramos", 0.0), st.number_input("Horas", 0.0), st.selectbox("Prioridad", PRIORIDADES, index=1)
             usar_f = st.checkbox("Poner fecha de entrega")
             ent = st.date_input("Entrega") if usar_f else None
-            pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + (st.select_slider("Margen %", options=[0,50,100,150,200], value=100)/100))
+            mgn = st.select_slider("Margen %", options=[0,50,100,150,200], value=100)
+            pf = ((0.024 * gms) + (hrs * 1.0)) * (1 + (mgn/100))
             st.write(f"### TOTAL: {pf:.2f} €"); nn = st.text_area("Notas")
             if st.form_submit_button("GUARDAR TRABAJO"):
                 f_e = ent.strftime("%d/%m/%Y") if usar_f else ""
@@ -192,7 +196,7 @@ elif st.session_state.sec == "FACTURAS":
         st.download_button("📩 Descargar PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"fct_{r['ID']}")
         st.divider()
 
-# --- 11. STATS (Centro de Control) ---
+# --- 11. STATS ---
 elif st.session_state.sec == "STATS":
     st.markdown("## 📊 Centro de Control VYE 3D")
     df_p['F_DT'] = pd.to_datetime(df_p['Fecha'], format="%d/%m/%Y", errors='coerce')
