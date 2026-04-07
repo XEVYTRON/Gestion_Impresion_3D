@@ -80,10 +80,16 @@ def limpiar_df(df, con_estado=False):
     for c in cols_base:
         if c not in df.columns: df[c] = ""
     df = df[cols_base].copy()
+    # Forzar tipos de datos para evitar el TypeError
     df['Prioridad'] = df['Prioridad'].fillna('Media').replace(['', 'nan', 'NaN'], 'Media').astype(str)
     df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False)
+    df['Cliente'] = df['Cliente'].astype(str).replace(['nan', 'NaN'], '')
+    df['Pieza'] = df['Pieza'].astype(str).replace(['nan', 'NaN'], '')
+    df['Notas'] = df['Notas'].astype(str).replace(['nan', 'NaN'], '')
+    df['Telefono'] = df['Telefono'].astype(str).replace(['nan', 'NaN'], '')
     df['Entrega'] = df['Entrega'].astype(str).replace(['nan', 'NaN', 'None', ''], '')
-    for n in ['Precio', 'Gramos', 'Horas']: df[n] = pd.to_numeric(df[n], errors='coerce').fillna(0.0)
+    for n in ['Precio', 'Gramos', 'Horas']:
+        df[n] = pd.to_numeric(df[n], errors='coerce').fillna(0.0)
     return df
 
 @st.cache_data(ttl=1)
@@ -94,7 +100,6 @@ def cargar_todo():
         return limpiar_df(p, True), limpiar_df(f, False)
     except: return None, None
 
-# Inicializar sesión
 if 'df_p' not in st.session_state:
     st.session_state.df_p, st.session_state.df_f = cargar_todo()
 if 'reset_key' not in st.session_state:
@@ -154,17 +159,17 @@ if st.session_state.sec == "TRABAJOS":
         if upd != r['Estado']:
             df_p.at[idx, "Estado"] = upd
             conn.update(worksheet="Pedidos", data=df_p)
-            st.session_state.df_p = df_p # Actualizar memoria
+            st.session_state.df_p = df_p
             st.rerun()
         
-        if r['Telefono']:
+        if r['Telefono'] and str(r['Telefono']).lower() != 'nan' and r['Telefono'] != "":
             url = f"https://wa.me/{r['Telefono']}?text=" + urllib.parse.quote(f"Hola {r['Cliente']}, tu pedido {r['Pieza']} de VYE 3D ya está listo!")
             c2.link_button("🟢 WHATSAPP", url)
         
         with st.expander("MODIFICAR / PDF ⚙️"):
             with st.form(f"form_mod_{r['ID']}"):
-                ec = st.text_input("Cliente", r['Cliente'])
-                ep = st.text_input("Pieza", r['Pieza'])
+                ec = st.text_input("Cliente", str(r['Cliente']))
+                ep = st.text_input("Pieza", str(r['Pieza']))
                 c3, c4, c5 = st.columns(3)
                 eg = c3.number_input("Gramos", value=float(r['Gramos']))
                 eh = c4.number_input("Horas", value=float(r['Horas']))
@@ -174,15 +179,26 @@ if st.session_state.sec == "TRABAJOS":
                 try: ent_val = datetime.strptime(str(r['Entrega']), "%d/%m/%Y")
                 except: ent_val = datetime.now()
                 eent = c7.date_input("Entrega", value=ent_val)
-                etel = c8.text_input("Tel.", r['Telefono'])
-                en = st.text_area("Notas", r['Notas'])
+                etel = c8.text_input("Tel.", str(r['Telefono']))
+                en = st.text_area("Notas", str(r['Notas']))
+                
                 if st.form_submit_button("Guardar"):
-                    vals = [ec, ep, epr, str(en).strip(), eg, eh, eprio, eent.strftime("%d/%m/%Y"), etel]
-                    df_p.loc[df_p['ID'] == r['ID'], ['Cliente', 'Pieza', 'Precio', 'Notas', 'Gramos', 'Horas', 'Prioridad', 'Entrega', 'Telefono']] = vals
-                    df_f.loc[df_f['ID'] == r['ID'], ['Cliente', 'Pieza', 'Precio', 'Notas', 'Gramos', 'Horas', 'Prioridad', 'Entrega', 'Telefono']] = vals
+                    # ACTUALIZACIÓN INDIVIDUAL DE COLUMNAS (Evita el TypeError de Pandas)
+                    cols_to_upd = {'Cliente': ec, 'Pieza': ep, 'Precio': epr, 'Notas': str(en).strip(), 
+                                   'Gramos': eg, 'Horas': eh, 'Prioridad': eprio, 
+                                   'Entrega': eent.strftime("%d/%m/%Y"), 'Telefono': etel}
+                    
+                    for col, val in cols_to_upd.items():
+                        df_p.at[idx, col] = val
+                        # Buscar en facturas por ID
+                        idx_f = df_f[df_f['ID'] == r['ID']].index
+                        if not idx_f.empty:
+                            df_f.at[idx_f[0], col] = val
+
                     conn.update(worksheet="Pedidos", data=df_p)
                     conn.update(worksheet="Facturas", data=df_f)
-                    st.session_state.df_p, st.session_state.df_f = df_p, df_f # Actualizar memoria
+                    st.session_state.df_p, st.session_state.df_f = df_p, df_f
+                    st.success("¡Samuel y sus datos actualizados!")
                     st.rerun()
             
             st.download_button("📩 PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"pdf_{r['ID']}")
@@ -191,14 +207,13 @@ if st.session_state.sec == "TRABAJOS":
                 df_f = df_f[df_f['ID'] != r['ID']]
                 conn.update(worksheet="Pedidos", data=df_p)
                 conn.update(worksheet="Facturas", data=df_f)
-                st.session_state.df_p, st.session_state.df_f = df_p, df_f # Actualizar memoria
+                st.session_state.df_p, st.session_state.df_f = df_p, df_f
                 st.rerun()
         st.divider()
 
 # --- 9. VISTA: NUEVO ---
 elif st.session_state.sec == "NUEVO":
     st.markdown("### Crear Nuevo Trabajo")
-    # El reset_key obliga a vaciar el formulario al guardar
     with st.container(key=f"container_nuevo_{st.session_state.reset_key}"):
         with st.form("form_nuevo_trabajo", clear_on_submit=True):
             c1, c2 = st.columns(2)
@@ -222,8 +237,8 @@ elif st.session_state.sec == "NUEVO":
                     df_f_new = pd.concat([df_f, nueva.drop(columns=['Estado'])], ignore_index=True)
                     conn.update(worksheet="Pedidos", data=df_p_new)
                     conn.update(worksheet="Facturas", data=df_f_new)
-                    st.session_state.df_p, st.session_state.df_f = df_p_new, df_f_new # Actualizar memoria
-                    st.session_state.reset_key += 1 # Forzar limpieza visual
+                    st.session_state.df_p, st.session_state.df_f = df_p_new, df_f_new
+                    st.session_state.reset_key += 1
                     st.success("¡Trabajo guardado correctamente!")
                     st.rerun()
                 else:
