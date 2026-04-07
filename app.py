@@ -64,7 +64,6 @@ st.markdown("""<style>
 .card-nota { font-size: 13px; color: #555 !important; font-style: italic; margin-top: 2px; line-height: 1.2; }
 .card-precio { font-size: 17px; color: #111 !important; font-weight: 900; margin-top: 8px; border-top: 1px solid #eee; padding-top: 5px; }
 .badge-estado { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; background-color: #f1f3f5; color: #6f42c1; border: 1px solid #6f42c1; margin-bottom: 5px; }
-.stat-card { background-color: #f8f9fa; border-radius: 10px; padding: 12px 16px; border-left: 5px solid #6f42c1; margin-bottom: 8px; }
 </style>""", unsafe_allow_html=True)
 
 # --- 5. DATOS ---
@@ -109,13 +108,13 @@ def card_html(r, badge=""):
     bdg = f"<div class='badge-estado'>{badge}</div>" if badge else ""
     return f'<div class="card-container {prio_class}">{bdg}{ent}<p class="card-fecha">{r["Fecha"]} | ID: {r["ID"]}</p><p class="card-nombre">{r["Cliente"]}</p><p class="card-pieza">Pieza: {r["Pieza"]}</p>{nt}<p class="card-precio">{r["Precio"]:.2f} €</p></div>'
 
-# --- 6. ACCESO (BOTÓN ENTRAR FIX) ---
+# --- 6. ACCESO ---
 if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
     st.markdown("<h1 style='text-align: center;'>🔐 Acceso VYE 3D</h1>", unsafe_allow_html=True)
-    p_in = st.text_input("Contraseña", type="password")
+    pass_input = st.text_input("Contraseña", type="password")
     if st.button("ENTRAR"):
-        if p_in == PASSWORD_APP: st.session_state.auth = True; st.rerun()
+        if pass_input == PASSWORD_APP: st.session_state.auth = True; st.rerun()
         else: st.error("Contraseña incorrecta")
     st.stop()
 
@@ -142,10 +141,18 @@ if st.session_state.sec == "TRABAJOS":
         if upd != r['Estado']:
             df_p.at[idx, "Estado"] = upd
             conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
+        
+        # --- SISTEMA DE AVISO WHATSAPP MEJORADO ---
         if r['Telefono'] and str(r['Telefono']) != "":
-            url = f"https://wa.me/{r['Telefono']}?text=" + urllib.parse.quote(f"Hola {r['Cliente']}, tu pedido {r['Pieza']} de VYE 3D ya esta listo!")
-            st.link_button("🟢 AVISAR POR WHATSAPP", url)
-        with st.expander("EDITAR / PDF"):
+            # Creamos un resumen de texto para el cliente
+            resumen_msg = f"¡Hola {r['Cliente']}! 👋 Tu pedido en VYE 3D ya está listo.\n\n🛠 *Detalles:* {r['Pieza']}\n🆔 *ID:* {r['ID']}\n💰 *Total:* {r['Precio']:.2f} €\n\nPuedes pasar a recogerlo cuando quieras. ¡Te adjunto la factura!"
+            url = f"https://wa.me/{r['Telefono']}?text=" + urllib.parse.quote(resumen_msg)
+            
+            c_wa, c_pdf = st.columns(2)
+            c_wa.link_button("🟢 AVISAR POR WHATSAPP", url)
+            c_pdf.download_button("📩 DESCARGAR PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"pdf_quick_{r['ID']}")
+
+        with st.expander("EDITAR / ELIMINAR ⚙️"):
             with st.form(f"fm_{r['ID']}"):
                 ec, ep = st.text_input("Cliente", r['Cliente']), st.text_input("Pieza", r['Pieza'])
                 eg, eh, epr = st.number_input("Gramos", value=float(r['Gramos'])), st.number_input("Horas", value=float(r['Horas'])), st.number_input("Precio (€)", value=float(r['Precio']))
@@ -157,8 +164,7 @@ if st.session_state.sec == "TRABAJOS":
                     f_val = eent.strftime("%d/%m/%Y") if usar_f else ""
                     df_p.loc[df_p['ID'] == r['ID'], ['Cliente','Pieza','Precio','Notas','Gramos','Horas','Prioridad','Entrega','Telefono']] = [ec, ep, epr, en, eg, eh, eprio, f_val, etel]
                     conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
-            st.download_button("📩 PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"pdf_{r['ID']}")
-            if st.button("🗑️ Eliminar", key=f"dl_{r['ID']}"):
+            if st.button("🗑️ Eliminar Trabajo Permanentemente", key=f"dl_{r['ID']}"):
                 df_p = df_p[df_p['ID'] != r['ID']]; conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
 
 # --- 9. VISTA: NUEVO ---
@@ -176,27 +182,17 @@ elif st.session_state.sec == "NUEVO":
                 nueva = pd.DataFrame([{"ID": datetime.now().strftime("%y%m%d%H%M%S"), "Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": nc, "Pieza": np, "Estado": "Pendiente", "Precio": pf, "Gramos": gms, "Horas": hrs, "Notas": nn, "Prioridad": prio, "Entrega": f_e, "Telefono": ntel}])
                 df_p = pd.concat([df_p, nueva], ignore_index=True); conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.session_state.reset_key +=1; st.rerun()
 
-# --- 10. VISTA: FACTURAS (Historial Unificado) ---
+# --- 10. VISTA: FACTURAS ---
 elif st.session_state.sec == "FACTURAS":
     st.markdown("### 📜 Historial de Facturas")
-    busc_f = st.text_input("🔍 Buscar por Cliente o Pieza...").lower().strip()
-    
-    # Usamos df_p para mostrar todo el historial de trabajos creados
+    busc_f = st.text_input("🔍 Buscar...").lower().strip()
     items_f = df_p[df_p['Cliente'].str.lower().str.contains(busc_f, na=False) | df_p['Pieza'].str.lower().str.contains(busc_f, na=False)] if busc_f else df_p
-    
     for _, r in items_f.sort_values(by="ID", ascending=False).iterrows():
-        # Usamos el diseño de tarjeta original
         st.markdown(card_html(r, r['Estado']), unsafe_allow_html=True)
-        # Botón de descarga de PDF para esta factura
-        st.download_button(
-            "📩 Descargar PDF", 
-            data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), 
-            file_name=f"VYE_{r['Cliente']}.pdf", 
-            key=f"fct_{r['ID']}"
-        )
+        st.download_button("📩 Descargar PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"fct_{r['ID']}")
         st.divider()
 
-# --- 11. STATS ---
+# --- 11. STATS (Centro de Control) ---
 elif st.session_state.sec == "STATS":
     st.markdown("## 📊 Centro de Control VYE 3D")
     df_p['F_DT'] = pd.to_datetime(df_p['Fecha'], format="%d/%m/%Y", errors='coerce')
