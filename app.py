@@ -14,7 +14,7 @@ try:
 except:
     PASSWORD_APP = "xevy2024"
 
-# --- 2. MOTOR DE PDF ---
+# --- 2. MOTOR DE PDF (DISEÑO ROBUSTO Y HOJA ÚNICA) ---
 def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, horas=0):
     pdf = FPDF()
     pdf.add_page()
@@ -51,7 +51,7 @@ def crear_pdf(id_factura, fecha, cliente, pieza, total, notas="", gramos=0, hora
 # --- 3. CONFIGURACIÓN ---
 st.set_page_config(page_title="VYE 3D", layout="centered")
 
-# --- 4. ESTILOS CSS ---
+# --- 4. ESTILOS CSS (DISEÑO ORIGINAL) ---
 st.markdown("""<style>
 @keyframes blinker { 50% { border-color: #ff0000; box-shadow: 0 0 10px #ff0000; } }
 .card-urgente-alerta { border-left: 10px solid #ff0000 !important; animation: blinker 1.5s linear infinite; }
@@ -76,11 +76,14 @@ def limpiar_df(df, con_estado=False):
     for c in cols_base:
         if c not in df.columns: df[c] = ""
     df = df[cols_base].copy()
-    df['Prioridad'] = df['Prioridad'].fillna('Media').replace(['', 'nan', 'NaN'], 'Media').astype(str)
-    df['ID'] = df['ID'].astype(str).str.replace('.0', '', regex=False)
-    df['Entrega'] = df['Entrega'].astype(str).replace(['nan', 'NaN', 'None', ''], '')
-    df['Notas'] = df['Notas'].astype(str).replace(['nan', 'NaN', 'None'], '')
-    for n in ['Precio', 'Gramos', 'Horas']: df[n] = pd.to_numeric(df[n], errors='coerce').fillna(0.0)
+    
+    # LIMPIEZA CRÍTICA DE .0 Y NAN
+    for col in ['ID', 'Telefono', 'Entrega', 'Prioridad', 'Notas', 'Cliente', 'Pieza']:
+        df[col] = df[col].astype(str).str.replace(r'\.0$', '', regex=True).replace(['nan', 'NaN', 'None', ''], '')
+    
+    df['Prioridad'] = df['Prioridad'].replace('', 'Media')
+    for n in ['Precio', 'Gramos', 'Horas']:
+        df[n] = pd.to_numeric(df[n], errors='coerce').fillna(0.0)
     return df
 
 @st.cache_data(ttl=1)
@@ -93,11 +96,13 @@ def cargar_todo():
 if 'df_p' not in st.session_state: st.session_state.df_p = cargar_todo()
 if 'reset_key' not in st.session_state: st.session_state.reset_key = 0
 
+df_p = st.session_state.df_p
+
 ESTADOS = ["Pendiente", "Diseñando", "Imprimiendo / Posprocesando", "Finalizado"]
 PRIORIDADES = ["Baja", "Media", "Alta", "URGENTE"]
 
 def card_html(r, badge=""):
-    prio_class = f"card-{r['Prioridad'].lower()}"
+    prio_class = f"card-{str(r['Prioridad']).lower()}"
     e_str = str(r['Entrega']).strip()
     if e_str and e_str != "":
         try:
@@ -113,9 +118,9 @@ def card_html(r, badge=""):
 if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
     st.markdown("<h1 style='text-align: center;'>🔐 Acceso VYE 3D</h1>", unsafe_allow_html=True)
-    pass_input = st.text_input("Contraseña", type="password")
+    p_in = st.text_input("Contraseña", type="password")
     if st.button("ENTRAR"):
-        if pass_input == PASSWORD_APP: st.session_state.auth = True; st.rerun()
+        if p_in == PASSWORD_APP: st.session_state.auth = True; st.rerun()
         else: st.error("Contraseña incorrecta")
     st.stop()
 
@@ -130,8 +135,6 @@ if n_cols[2].button("FACTURAS"): st.session_state.sec = "FACTURAS"; st.rerun()
 if n_cols[3].button("📊"): st.session_state.sec = "STATS"; st.rerun()
 st.divider()
 
-df_p = st.session_state.df_p
-
 # --- 8. VISTA: TRABAJOS ---
 if st.session_state.sec == "TRABAJOS":
     busc = st.text_input("🔍 Buscar...").lower().strip()
@@ -143,31 +146,34 @@ if st.session_state.sec == "TRABAJOS":
             df_p.at[idx, "Estado"] = upd
             conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
         
-        # --- WHATSAPP BLINDADO ---
         if r['Telefono'] and str(r['Telefono']) != "":
-            # Limpiar número: Solo dejar dígitos (Ej: "+34 660..." -> "34660...")
-            tel_limpio = re.sub(r'\D', '', str(r['Telefono']))
-            
-            resumen_msg = f"¡Hola {r['Cliente']}! 👋 Tu pedido en VYE 3D ya está listo.\n\n🛠 *Detalles:* {r['Pieza']}\n💰 *Total:* {r['Precio']:.2f} €\n\nPuedes pasar a recogerlo cuando quieras. ¡Te adjunto la factura!"
-            url_wa = f"https://api.whatsapp.com/send?phone={tel_limpio}&text={urllib.parse.quote(resumen_msg)}"
-            
+            tel_clean = re.sub(r'\D', '', str(r['Telefono']))
+            msg = urllib.parse.quote(f"¡Hola {r['Cliente']}! 👋 Tu pedido en VYE 3D ya está listo.\n\n🛠 *Detalles:* {r['Pieza']}\n💰 *Total:* {r['Precio']:.2f} €\n\nPuedes pasar a recogerlo cuando quieras. ¡Te adjunto la factura!")
             c_wa, c_pdf = st.columns(2)
-            c_wa.link_button("🟢 AVISAR POR WHATSAPP", url_wa)
-            c_pdf.download_button("📩 DESCARGAR PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"pdf_q_{r['ID']}")
+            c_wa.link_button("🟢 WHATSAPP", f"https://api.whatsapp.com/send?phone={tel_clean}&text={msg}")
+            c_pdf.download_button("📩 PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"pdf_q_{r['ID']}")
 
         with st.expander("EDITAR / ELIMINAR ⚙️"):
             with st.form(f"fm_{r['ID']}"):
                 ec, ep = st.text_input("Cliente", r['Cliente']), st.text_input("Pieza", r['Pieza'])
-                eg, eh, epr = st.number_input("Gramos", value=float(r['Gramos'])), st.number_input("Horas", value=float(r['Horas'])), st.number_input("Precio (€)", value=float(r['Precio']))
-                eprio = st.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(r['Prioridad']))
+                c3, c4, c5 = st.columns(3)
+                eg, eh, epr = c3.number_input("Gramos", value=float(r['Gramos'])), c4.number_input("Horas", value=float(r['Horas'])), c5.number_input("Precio (€)", value=float(r['Precio']))
+                eprio = st.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(r['Prioridad'] if r['Prioridad'] in PRIORIDADES else "Media"))
                 usar_f = st.checkbox("Tiene entrega", value=(r['Entrega'] != ""))
-                eent = st.date_input("Fecha", value=datetime.now()) if usar_f else None
+                try: e_val = datetime.strptime(str(r['Entrega']), "%d/%m/%Y")
+                except: e_val = datetime.now()
+                eent = st.date_input("Fecha", value=e_val) if usar_f else None
                 etel, en = st.text_input("Tel", r['Telefono']), st.text_area("Notas", r['Notas'])
+                
                 if st.form_submit_button("Guardar Cambios"):
                     f_val = eent.strftime("%d/%m/%Y") if usar_f else ""
-                    df_p.loc[df_p['ID'] == r['ID'], ['Cliente','Pieza','Precio','Notas','Gramos','Horas','Prioridad','Entrega','Telefono']] = [ec, ep, epr, en, eg, eh, eprio, f_val, etel]
+                    # ACTUALIZACIÓN SEGURA COLUMNA POR COLUMNA
+                    upd_data = {'Cliente': ec, 'Pieza': ep, 'Precio': epr, 'Notas': str(en).strip(), 'Gramos': eg, 'Horas': eh, 'Prioridad': eprio, 'Entrega': f_val, 'Telefono': str(etel)}
+                    for col, val in upd_data.items():
+                        df_p.at[idx, col] = val
                     conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
-            if st.button("🗑️ Eliminar Trabajo Permanentemente", key=f"dl_{r['ID']}"):
+            
+            if st.button("🗑️ Eliminar permanentemente", key=f"dl_{r['ID']}"):
                 df_p = df_p[df_p['ID'] != r['ID']]; conn.update(worksheet="Pedidos", data=df_p); st.session_state.df_p = df_p; st.rerun()
 
 # --- 9. VISTA: NUEVO ---
@@ -193,14 +199,13 @@ elif st.session_state.sec == "FACTURAS":
     items_f = df_p[df_p['Cliente'].str.lower().str.contains(busc_f, na=False) | df_p['Pieza'].str.lower().str.contains(busc_f, na=False)] if busc_f else df_p
     for _, r in items_f.sort_values(by="ID", ascending=False).iterrows():
         st.markdown(card_html(r, r['Estado']), unsafe_allow_html=True)
-        st.download_button("📩 Descargar PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"fct_{r['ID']}")
+        st.download_button("📩 PDF", data=crear_pdf(r['ID'], r['Fecha'], r['Cliente'], r['Pieza'], r['Precio'], r['Notas'], r['Gramos'], r['Horas']), file_name=f"VYE_{r['Cliente']}.pdf", key=f"fct_{r['ID']}")
         st.divider()
 
 # --- 11. STATS ---
 elif st.session_state.sec == "STATS":
     st.markdown("## 📊 Centro de Control VYE 3D")
     df_p['F_DT'] = pd.to_datetime(df_p['Fecha'], format="%d/%m/%Y", errors='coerce')
-    
     st.markdown("### ⏳ Pendientes y Proyecciones")
     df_pend = df_p[df_p["Estado"] != "Finalizado"]
     if not df_pend.empty:
@@ -209,22 +214,15 @@ elif st.session_state.sec == "STATS":
         c1.metric("Ventas en Espera", f"{p_v:.2f} €")
         c2.metric("Plástico Necesario", f"{p_g/1000:.2f} kg")
         c3.metric("Horas de Luz", f"{p_h:.1f} h")
-    else: st.info("No hay trabajos pendientes.")
-
     st.divider()
-
     st.markdown("### 📜 Historial de Caja Real")
     df_f_final = df_p[df_p["Estado"] == "Finalizado"].copy()
     if not df_f_final.empty:
         df_f_final['Mes_Año'] = df_f_final['F_DT'].dt.strftime('%m/%Y')
-        meses = sorted(df_f_final['Mes_Año'].unique(), reverse=True)
-        mes_sel = st.selectbox("Selecciona mes:", meses)
+        mes_sel = st.selectbox("Selecciona mes:", sorted(df_f_final['Mes_Año'].unique(), reverse=True))
         df_mes_real = df_f_final[df_f_final['Mes_Año'] == mes_sel]
         t_v = df_mes_real['Precio'].sum(); t_g = df_mes_real['Gramos'].sum(); t_h = df_mes_real['Horas'].sum()
         beneficio = t_v - (t_g * 0.024 + t_h * 0.20)
         col_a, col_b, col_c = st.columns(3)
-        col_a.metric(f"Ingresos {mes_sel}", f"{t_v:.2f} €")
-        col_b.metric("Beneficio Neto", f"{beneficio:.2f} €")
-        col_c.metric("Material Gastado", f"{t_g/1000:.2f} kg")
+        col_a.metric(f"Ingresos {mes_sel}", f"{t_v:.2f} €"); col_b.metric("Beneficio Neto", f"{beneficio:.2f} €"); col_c.metric("Material Gastado", f"{t_g/1000:.2f} kg")
         st.dataframe(df_mes_real[['Fecha', 'Cliente', 'Pieza', 'Precio']], use_container_width=True)
-    else: st.info("No hay trabajos finalizados.")
